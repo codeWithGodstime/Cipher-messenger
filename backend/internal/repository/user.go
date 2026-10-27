@@ -10,7 +10,10 @@ import (
 	"messenger/backend/internal/model"
 )
 
-var ErrDuplicate = errors.New("duplicate")
+var (
+	ErrDuplicate = errors.New("duplicate")
+	ErrNotFound  = errors.New("not found")
+)
 
 type UserRepository interface {
 	FindByPhone(ctx context.Context, phone string) (*model.User, error)

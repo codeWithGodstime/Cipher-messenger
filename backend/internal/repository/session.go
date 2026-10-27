@@ -70,7 +70,7 @@ func (r *sessionRepository) UpdateRefresh(ctx context.Context, id, hash string, 
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return ErrNotFound
 	}
 	return nil
 }

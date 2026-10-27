@@ -261,6 +261,59 @@ func (s *AuthService) Verify(ctx context.Context, rawPhone, rawCode string) (*Ve
 	}, nil
 }
 
+type TokenResult struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int
+}
+
+// Refresh rotates the refresh token and returns a new access token for the same session.
+func (s *AuthService) Refresh(ctx context.Context, raw string) (*TokenResult, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, apperr.InvalidRefresh()
+	}
+	session, err := s.sessions.FindByRefreshHash(ctx, token.HashRefresh(raw))
+	if err != nil {
+		return nil, fmt.Errorf("load session: %w", err)
+	}
+	now := time.Now().UTC()
+	if session == nil || session.RevokedAt != nil || !session.ExpiresAt.After(now) {
+		return nil, apperr.InvalidRefresh()
+	}
+
+	refreshRaw, refreshHash, err := token.NewRefresh()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.sessions.UpdateRefresh(ctx, session.ID, refreshHash, now.Add(s.cfg.RefreshTTL)); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, apperr.InvalidRefresh()
+		}
+		return nil, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	access, err := s.tokens.Sign(session.UserID, session.ID, now)
+	if err != nil {
+		return nil, err
+	}
+	return &TokenResult{
+		AccessToken:  access,
+		RefreshToken: refreshRaw,
+		ExpiresIn:    int(s.cfg.AccessTTL.Seconds()),
+	}, nil
+}
+
+// Logout revokes the session carried by the current access token.
+func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return apperr.Unauthorized()
+	}
+	if err := s.sessions.Revoke(ctx, sessionID, time.Now().UTC()); err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
+}
+
 func challengeUsable(challenge *model.OTPChallenge, now time.Time) bool {
 	return challenge != nil &&
 		challenge.ConsumedAt == nil &&

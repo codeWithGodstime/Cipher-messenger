@@ -15,6 +15,7 @@ import (
 	"messenger/backend/internal/config"
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/handler"
+	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/routes"
 	"messenger/backend/internal/service"
@@ -49,21 +50,23 @@ func main() {
 	health := handler.NewHealthHandler(
 		service.NewHealthService(repository.NewHealthRepository(db)),
 	)
+	sessions := repository.NewSessionRepository(db)
+	tokens := token.NewManager(cfg.JWTSecret, cfg.AccessTTL)
 	auth := handler.NewAuthHandler(service.NewAuthService(
 		cfg,
 		repository.NewUserRepository(db),
 		repository.NewOTPRepository(db),
-		repository.NewSessionRepository(db),
+		sessions,
 		database.NewTransactor(db),
 		sms.NewSender(cfg, log.Default()),
-		token.NewManager(cfg.JWTSecret, cfg.AccessTTL),
+		tokens,
 	))
 
 	addr := ":" + cfg.Port
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      routes.New(health, auth),
+		Handler:      routes.New(health, auth, middleware.RequireAccess(tokens, sessions)),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

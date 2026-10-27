@@ -32,3 +32,27 @@ func (h *AuthHandler) RequestOTP(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"expires_in": expiresIn})
 }
+
+func (h *AuthHandler) Verify(c *gin.Context) {
+	var req struct {
+		Phone string `json:"phone"`
+		Code  string `json:"code"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, apperr.InvalidBody())
+		return
+	}
+	result, err := h.auth.Verify(c.Request.Context(), req.Phone, req.Code)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"access_token":  result.AccessToken,
+		"refresh_token": result.RefreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    result.ExpiresIn,
+		"created":       result.Created,
+		"profile":       newProfileJSON(result.User),
+	})
+}

@@ -5,11 +5,35 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"messenger/backend/internal/apperr"
+	"messenger/backend/internal/model"
 )
+
+type profileJSON struct {
+	ID           string    `json:"id"`
+	Phone        string    `json:"phone"`
+	DisplayName  string    `json:"display_name"`
+	About        string    `json:"about"`
+	ProfilePhoto string    `json:"profile_photo"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func newProfileJSON(user *model.User) profileJSON {
+	return profileJSON{
+		ID:           user.ID,
+		Phone:        user.Phone,
+		DisplayName:  user.DisplayName,
+		About:        user.About,
+		ProfilePhoto: user.ProfilePhoto,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
+	}
+}
 
 func writeError(c *gin.Context, err error) {
 	var apiErr *apperr.Error

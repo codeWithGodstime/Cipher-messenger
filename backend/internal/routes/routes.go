@@ -12,5 +12,6 @@ func New(health *handler.HealthHandler, auth *handler.AuthHandler) http.Handler 
 	r := gin.Default()
 	r.GET("/health", health.Get)
 	r.POST("/auth/otp", auth.RequestOTP)
+	r.POST("/auth/verify", auth.Verify)
 	return r
 }

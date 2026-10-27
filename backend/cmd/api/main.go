@@ -19,6 +19,7 @@ import (
 	"messenger/backend/internal/routes"
 	"messenger/backend/internal/service"
 	"messenger/backend/internal/sms"
+	"messenger/backend/internal/token"
 )
 
 func main() {
@@ -50,9 +51,12 @@ func main() {
 	)
 	auth := handler.NewAuthHandler(service.NewAuthService(
 		cfg,
+		repository.NewUserRepository(db),
 		repository.NewOTPRepository(db),
+		repository.NewSessionRepository(db),
 		database.NewTransactor(db),
 		sms.NewSender(cfg, log.Default()),
+		token.NewManager(cfg.JWTSecret, cfg.AccessTTL),
 	))
 
 	addr := ":" + cfg.Port

@@ -10,12 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"messenger/backend/internal/config"
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/handler"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/routes"
 	"messenger/backend/internal/service"
+	"messenger/backend/internal/sms"
 )
 
 func main() {
@@ -38,15 +41,25 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
+	if cfg.AppEnv == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	health := handler.NewHealthHandler(
 		service.NewHealthService(repository.NewHealthRepository(db)),
 	)
+	auth := handler.NewAuthHandler(service.NewAuthService(
+		cfg,
+		repository.NewOTPRepository(db),
+		database.NewTransactor(db),
+		sms.NewSender(cfg, log.Default()),
+	))
 
 	addr := ":" + cfg.Port
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      routes.New(health),
+		Handler:      routes.New(health, auth),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

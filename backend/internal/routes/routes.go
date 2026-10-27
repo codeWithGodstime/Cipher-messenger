@@ -8,8 +8,9 @@ import (
 	"messenger/backend/internal/handler"
 )
 
-func New(health *handler.HealthHandler) http.Handler {
+func New(health *handler.HealthHandler, auth *handler.AuthHandler) http.Handler {
 	r := gin.Default()
 	r.GET("/health", health.Get)
+	r.POST("/auth/otp", auth.RequestOTP)
 	return r
 }

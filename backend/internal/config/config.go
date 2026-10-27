@@ -26,6 +26,9 @@ type Config struct {
 	// OTPRequired controls POST /auth/otp. True, the default, stores and sends a code.
 	// OTP_REQUIRED=false skips the code and returns the same tokens as POST /auth/verify.
 	OTPRequired bool
+	// RedisURL is REDIS_URL. It is required only when OTP_REQUIRED is true.
+	// When OTP is disabled the process boots without Redis.
+	RedisURL string
 }
 
 func Load() (Config, error) {
@@ -61,6 +64,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
+	if otpRequired && redisURL == "" {
+		return Config{}, fmt.Errorf("REDIS_URL is required when OTP_REQUIRED is true")
+	}
 
 	cfg := Config{
 		AppEnv:         strings.ToLower(strings.TrimSpace(env("APP_ENV", "development"))),
@@ -75,6 +82,7 @@ func Load() (Config, error) {
 		OTPRateWindow:  rateWindow,
 		OTPRateMax:     rateMax,
 		OTPRequired:    otpRequired,
+		RedisURL:       redisURL,
 	}
 	if cfg.Port == "" {
 		return Config{}, fmt.Errorf("PORT must not be empty")

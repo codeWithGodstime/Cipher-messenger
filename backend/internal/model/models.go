@@ -20,19 +20,6 @@ type User struct {
 
 func (User) TableName() string { return "users" }
 
-type OTPChallenge struct {
-	ID          string    `gorm:"primaryKey;size:36"`
-	Phone       string    `gorm:"size:16;not null;index"`
-	CodeHash    string    `gorm:"size:255;not null"`
-	ExpiresAt   time.Time `gorm:"not null;index"`
-	Attempts    int       `gorm:"not null;default:0"`
-	MaxAttempts int       `gorm:"not null"`
-	ConsumedAt  *time.Time
-	CreatedAt   time.Time `gorm:"not null;index"`
-}
-
-func (OTPChallenge) TableName() string { return "otp_challenges" }
-
 type Session struct {
 	ID          string    `gorm:"primaryKey;size:36"`
 	UserID      string    `gorm:"size:36;not null;index"`

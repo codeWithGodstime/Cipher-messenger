@@ -2,114 +2,195 @@ package repository
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
-	"gorm.io/gorm"
-
-	"messenger/backend/internal/database"
-	"messenger/backend/internal/model"
+	"github.com/redis/go-redis/v9"
 )
 
+// Challenge is one active login code for a phone number.
+// The plaintext code is never stored. Expiry is the Redis key TTL.
+type Challenge struct {
+	CodeHash    string
+	Attempts    int
+	MaxAttempts int
+	CreatedAt   time.Time
+}
+
+// OTPRepository stores hashed login codes and request timestamps in Redis.
+//
+//	otp:challenge:{e164}  hash  code_hash, attempts, max_attempts, created_at
+//	                      TTL   OTP_TTL (about 5 minutes)
+//	otp:rate:{e164}       zset  member id, score unix milliseconds
+//	                      TTL   OTP_RATE_WINDOW
 type OTPRepository interface {
-	CountSince(ctx context.Context, phone string, since time.Time) (int64, error)
-	OldestSince(ctx context.Context, phone string, since time.Time) (*model.OTPChallenge, error)
-	Latest(ctx context.Context, phone string) (*model.OTPChallenge, error)
-	Create(ctx context.Context, challenge *model.OTPChallenge) error
-	ConsumeActive(ctx context.Context, phone string, now time.Time) error
-	IncrementAttempts(ctx context.Context, id string, max int) (int, bool, error)
-	Consume(ctx context.Context, id string, now time.Time) (bool, error)
-	Delete(ctx context.Context, id string) error
+	RequestStats(ctx context.Context, phone string, since time.Time) (count int64, oldest, latest time.Time, err error)
+	Save(ctx context.Context, phone, codeHash string, maxAttempts int, ttl time.Duration) error
+	RecordRequest(ctx context.Context, phone string, at time.Time, window time.Duration) (string, error)
+	ForgetRequest(ctx context.Context, phone, member string) error
+	Get(ctx context.Context, phone string) (*Challenge, error)
+	IncrementAttempts(ctx context.Context, phone string) (int, bool, error)
+	Delete(ctx context.Context, phone string) (bool, error)
 }
 
-type otpRepository struct {
-	db *gorm.DB
+func challengeKey(phone string) string { return "otp:challenge:" + phone }
+
+func rateKey(phone string) string { return "otp:rate:" + phone }
+
+type redisOTPRepository struct {
+	rdb *redis.Client
 }
 
-func NewOTPRepository(db *gorm.DB) OTPRepository {
-	return &otpRepository{db: db}
+func NewRedisOTPRepository(rdb *redis.Client) OTPRepository {
+	return &redisOTPRepository{rdb: rdb}
 }
 
-func (r *otpRepository) conn(ctx context.Context) *gorm.DB {
-	return database.FromContext(ctx, r.db)
-}
-
-func (r *otpRepository) CountSince(ctx context.Context, phone string, since time.Time) (int64, error) {
-	var n int64
-	err := r.conn(ctx).Model(&model.OTPChallenge{}).
-		Where("phone = ? AND created_at >= ?", phone, since).
-		Count(&n).Error
-	return n, err
-}
-
-func (r *otpRepository) OldestSince(ctx context.Context, phone string, since time.Time) (*model.OTPChallenge, error) {
-	var challenge model.OTPChallenge
-	err := r.conn(ctx).
-		Where("phone = ? AND created_at >= ?", phone, since).
-		Order("created_at ASC").
-		First(&challenge).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
+func (r *redisOTPRepository) RequestStats(ctx context.Context, phone string, since time.Time) (int64, time.Time, time.Time, error) {
+	key := rateKey(phone)
+	minScore := strconv.FormatInt(since.UnixMilli(), 10)
+	pipe := r.rdb.TxPipeline()
+	pipe.ZRemRangeByScore(ctx, key, "-inf", "("+minScore)
+	countCmd := pipe.ZCount(ctx, key, minScore, "+inf")
+	oldestCmd := pipe.ZRangeWithScores(ctx, key, 0, 0)
+	latestCmd := pipe.ZRangeWithScores(ctx, key, -1, -1)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, time.Time{}, time.Time{}, err
 	}
+	return countCmd.Val(), scoreTime(oldestCmd.Val()), scoreTime(latestCmd.Val()), nil
+}
+
+func (r *redisOTPRepository) Save(ctx context.Context, phone, codeHash string, maxAttempts int, ttl time.Duration) error {
+	key := challengeKey(phone)
+	pipe := r.rdb.TxPipeline()
+	pipe.Del(ctx, key)
+	pipe.HSet(ctx, key, map[string]any{
+		"code_hash":    codeHash,
+		"attempts":     0,
+		"max_attempts": maxAttempts,
+		"created_at":   time.Now().UTC().Unix(),
+	})
+	pipe.Expire(ctx, key, ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (r *redisOTPRepository) RecordRequest(ctx context.Context, phone string, at time.Time, window time.Duration) (string, error) {
+	member := strconv.FormatInt(at.UnixNano(), 10)
+	pipe := r.rdb.TxPipeline()
+	pipe.ZAdd(ctx, rateKey(phone), redis.Z{Score: float64(at.UnixMilli()), Member: member})
+	pipe.Expire(ctx, rateKey(phone), window)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return "", err
+	}
+	return member, nil
+}
+
+func (r *redisOTPRepository) ForgetRequest(ctx context.Context, phone, member string) error {
+	if member == "" {
+		return nil
+	}
+	return r.rdb.ZRem(ctx, rateKey(phone), member).Err()
+}
+
+func (r *redisOTPRepository) Get(ctx context.Context, phone string) (*Challenge, error) {
+	fields, err := r.rdb.HGetAll(ctx, challengeKey(phone)).Result()
 	if err != nil {
 		return nil, err
 	}
-	return &challenge, nil
-}
-
-func (r *otpRepository) Latest(ctx context.Context, phone string) (*model.OTPChallenge, error) {
-	var challenge model.OTPChallenge
-	err := r.conn(ctx).
-		Where("phone = ?", phone).
-		Order("created_at DESC").
-		First(&challenge).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if len(fields) == 0 || fields["code_hash"] == "" {
 		return nil, nil
 	}
+	attempts, err := strconv.Atoi(fields["attempts"])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("otp attempts: %w", err)
 	}
-	return &challenge, nil
+	maxAttempts, err := strconv.Atoi(fields["max_attempts"])
+	if err != nil {
+		return nil, fmt.Errorf("otp max attempts: %w", err)
+	}
+	createdUnix, err := strconv.ParseInt(fields["created_at"], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("otp created_at: %w", err)
+	}
+	return &Challenge{
+		CodeHash:    fields["code_hash"],
+		Attempts:    attempts,
+		MaxAttempts: maxAttempts,
+		CreatedAt:   time.Unix(createdUnix, 0).UTC(),
+	}, nil
 }
 
-func (r *otpRepository) Create(ctx context.Context, challenge *model.OTPChallenge) error {
-	return r.conn(ctx).Create(challenge).Error
-}
+var incrementAttempts = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  return -1
+end
+local attempts = tonumber(redis.call('HGET', KEYS[1], 'attempts')) or 0
+local maxa = tonumber(redis.call('HGET', KEYS[1], 'max_attempts')) or 0
+if attempts >= maxa then
+  return -1
+end
+return redis.call('HINCRBY', KEYS[1], 'attempts', 1)
+`)
 
-func (r *otpRepository) ConsumeActive(ctx context.Context, phone string, now time.Time) error {
-	return r.conn(ctx).Model(&model.OTPChallenge{}).
-		Where("phone = ? AND consumed_at IS NULL", phone).
-		Update("consumed_at", now).Error
-}
-
-func (r *otpRepository) IncrementAttempts(ctx context.Context, id string, max int) (int, bool, error) {
-	res := r.conn(ctx).Exec(
-		`UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = ? AND consumed_at IS NULL AND attempts < ?`,
-		id, max,
-	)
-	if res.Error != nil {
-		return 0, false, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return 0, false, nil
-	}
-	var challenge model.OTPChallenge
-	if err := r.conn(ctx).Where("id = ?", id).First(&challenge).Error; err != nil {
+func (r *redisOTPRepository) IncrementAttempts(ctx context.Context, phone string) (int, bool, error) {
+	n, err := incrementAttempts.Run(ctx, r.rdb, []string{challengeKey(phone)}).Int()
+	if err != nil {
 		return 0, false, err
 	}
-	return challenge.Attempts, true, nil
-}
-
-func (r *otpRepository) Consume(ctx context.Context, id string, now time.Time) (bool, error) {
-	res := r.conn(ctx).Model(&model.OTPChallenge{}).
-		Where("id = ? AND consumed_at IS NULL", id).
-		Update("consumed_at", now)
-	if res.Error != nil {
-		return false, res.Error
+	if n < 0 {
+		return 0, false, nil
 	}
-	return res.RowsAffected > 0, nil
+	return n, true, nil
 }
 
-func (r *otpRepository) Delete(ctx context.Context, id string) error {
-	return r.conn(ctx).Where("id = ?", id).Delete(&model.OTPChallenge{}).Error
+func (r *redisOTPRepository) Delete(ctx context.Context, phone string) (bool, error) {
+	n, err := r.rdb.Del(ctx, challengeKey(phone)).Result()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func scoreTime(values []redis.Z) time.Time {
+	if len(values) == 0 {
+		return time.Time{}
+	}
+	millis := int64(values[0].Score)
+	return time.UnixMilli(millis).UTC()
+}
+
+// disabledOTPRepository is used when OTP_REQUIRED is false.
+// Verify still sees no code, and request-OTP does not write one.
+type disabledOTPRepository struct{}
+
+func NewDisabledOTPRepository() OTPRepository { return disabledOTPRepository{} }
+
+func (disabledOTPRepository) RequestStats(context.Context, string, time.Time) (int64, time.Time, time.Time, error) {
+	return 0, time.Time{}, time.Time{}, fmt.Errorf("otp store is disabled")
+}
+
+func (disabledOTPRepository) Save(context.Context, string, string, int, time.Duration) error {
+	return fmt.Errorf("otp store is disabled")
+}
+
+func (disabledOTPRepository) RecordRequest(context.Context, string, time.Time, time.Duration) (string, error) {
+	return "", fmt.Errorf("otp store is disabled")
+}
+
+func (disabledOTPRepository) ForgetRequest(context.Context, string, string) error {
+	return fmt.Errorf("otp store is disabled")
+}
+
+func (disabledOTPRepository) Get(context.Context, string) (*Challenge, error) {
+	return nil, nil
+}
+
+func (disabledOTPRepository) IncrementAttempts(context.Context, string) (int, bool, error) {
+	return 0, false, nil
+}
+
+func (disabledOTPRepository) Delete(context.Context, string) (bool, error) {
+	return false, nil
 }

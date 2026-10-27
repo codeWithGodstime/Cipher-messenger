@@ -90,28 +90,19 @@ func (s *AuthService) RequestOTP(ctx context.Context, rawPhone string) (*Request
 
 	now := time.Now().UTC()
 	since := now.Add(-s.cfg.OTPRateWindow)
-	count, err := s.otps.CountSince(ctx, number, since)
+	count, oldest, latest, err := s.otps.RequestStats(ctx, number, since)
 	if err != nil {
 		return nil, fmt.Errorf("count otp requests: %w", err)
 	}
 	if count >= int64(s.cfg.OTPRateMax) {
-		oldest, err := s.otps.OldestSince(ctx, number, since)
-		if err != nil {
-			return nil, fmt.Errorf("oldest otp request: %w", err)
-		}
 		retry := 1
-		if oldest != nil {
-			retry = secondsUntil(oldest.CreatedAt.Add(s.cfg.OTPRateWindow), now)
+		if !oldest.IsZero() {
+			retry = secondsUntil(oldest.Add(s.cfg.OTPRateWindow), now)
 		}
 		return nil, apperr.RateLimited(retry)
 	}
-
-	latest, err := s.otps.Latest(ctx, number)
-	if err != nil {
-		return nil, fmt.Errorf("latest otp: %w", err)
-	}
-	if latest != nil && now.Sub(latest.CreatedAt) < s.cfg.OTPMinInterval {
-		return nil, apperr.RateLimited(secondsUntil(latest.CreatedAt.Add(s.cfg.OTPMinInterval), now))
+	if !latest.IsZero() && now.Sub(latest) < s.cfg.OTPMinInterval {
+		return nil, apperr.RateLimited(secondsUntil(latest.Add(s.cfg.OTPMinInterval), now))
 	}
 
 	code, err := newOTPCode()
@@ -122,33 +113,18 @@ func (s *AuthService) RequestOTP(ctx context.Context, rawPhone string) (*Request
 	if err != nil {
 		return nil, fmt.Errorf("hash otp: %w", err)
 	}
-	id, err := model.NewID()
-	if err != nil {
-		return nil, err
-	}
-	challenge := &model.OTPChallenge{
-		ID:          id,
-		Phone:       number,
-		CodeHash:    string(hash),
-		ExpiresAt:   now.Add(s.cfg.OTPTTL),
-		MaxAttempts: s.cfg.OTPMaxAttempts,
-		CreatedAt:   now,
-	}
-
-	err = s.tx.InTx(ctx, func(ctx context.Context) error {
-		if err := s.otps.ConsumeActive(ctx, number, now); err != nil {
-			return err
-		}
-		return s.otps.Create(ctx, challenge)
-	})
-	if err != nil {
+	if err := s.otps.Save(ctx, number, string(hash), s.cfg.OTPMaxAttempts, s.cfg.OTPTTL); err != nil {
 		return nil, fmt.Errorf("store otp: %w", err)
+	}
+	member, err := s.otps.RecordRequest(ctx, number, now, s.cfg.OTPRateWindow)
+	if err != nil {
+		_, _ = s.otps.Delete(ctx, number)
+		return nil, fmt.Errorf("record otp request: %w", err)
 	}
 
 	if err := s.sender.Send(ctx, number, code); err != nil {
-		if delErr := s.otps.Delete(ctx, challenge.ID); delErr != nil {
-			return nil, fmt.Errorf("send otp: %w (cleanup: %v)", err, delErr)
-		}
+		_, _ = s.otps.Delete(ctx, number)
+		_ = s.otps.ForgetRequest(ctx, number, member)
 		if errors.Is(err, sms.ErrNotConfigured) {
 			return nil, apperr.SMSUnavailable()
 		}
@@ -169,26 +145,26 @@ func (s *AuthService) Verify(ctx context.Context, rawPhone, rawCode string) (*Ve
 		return nil, apperr.Validation("Code must be a 6-digit number.")
 	}
 
-	challenge, err := s.otps.Latest(ctx, number)
+	challenge, err := s.otps.Get(ctx, number)
 	if err != nil {
 		return nil, fmt.Errorf("load otp: %w", err)
 	}
 	now := time.Now().UTC()
-	if !challengeUsable(challenge, now) {
+	if !challengeUsable(challenge) {
 		return nil, apperr.InvalidCode()
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(challenge.CodeHash), []byte(code)); err != nil {
 		if !errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 			return nil, fmt.Errorf("compare otp: %w", err)
 		}
-		if _, _, incErr := s.otps.IncrementAttempts(ctx, challenge.ID, challenge.MaxAttempts); incErr != nil {
+		if _, _, incErr := s.otps.IncrementAttempts(ctx, number); incErr != nil {
 			return nil, fmt.Errorf("record otp attempt: %w", incErr)
 		}
 		return nil, apperr.InvalidCode()
 	}
 
 	result, err := s.login(ctx, number, now, func(ctx context.Context) error {
-		ok, err := s.otps.Consume(ctx, challenge.ID, now)
+		ok, err := s.otps.Delete(ctx, number)
 		if err != nil {
 			return err
 		}
@@ -207,7 +183,7 @@ func (s *AuthService) Verify(ctx context.Context, rawPhone, rawCode string) (*Ve
 }
 
 // login creates the account on first use, or loads it, then issues a session.
-// extra runs in the same transaction, which is how verify consumes the code.
+// extra runs after the account transaction commits. Verify uses it to delete the Redis code.
 func (s *AuthService) login(ctx context.Context, number string, now time.Time, extra func(ctx context.Context) error) (*VerifyResult, error) {
 	sessionID, err := model.NewID()
 	if err != nil {
@@ -268,13 +244,16 @@ func (s *AuthService) login(ctx context.Context, number string, now time.Time, e
 		if err := s.sessions.Create(ctx, session); err != nil {
 			return err
 		}
-		if extra != nil {
-			return extra(ctx)
-		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if extra != nil {
+		if err := extra(ctx); err != nil {
+			_ = s.sessions.Revoke(ctx, sessionID, time.Now().UTC())
+			return nil, err
+		}
 	}
 
 	access, err := s.tokens.Sign(user.ID, sessionID, now)
@@ -344,11 +323,8 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-func challengeUsable(challenge *model.OTPChallenge, now time.Time) bool {
-	return challenge != nil &&
-		challenge.ConsumedAt == nil &&
-		challenge.ExpiresAt.After(now) &&
-		challenge.Attempts < challenge.MaxAttempts
+func challengeUsable(challenge *repository.Challenge) bool {
+	return challenge != nil && challenge.Attempts < challenge.MaxAttempts
 }
 
 func newOTPCode() (string, error) {

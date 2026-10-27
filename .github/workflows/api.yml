@@ -1,0 +1,18 @@
+name: API
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Build API
+        working-directory: backend
+        run: go build -o /tmp/messenger-api ./cmd/api

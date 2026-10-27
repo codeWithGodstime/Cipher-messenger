@@ -65,51 +65,66 @@ type VerifyResult struct {
 	User         *model.User
 }
 
-// RequestOTP stores a hashed code for an E.164 number and asks the sender to deliver it.
-// The plaintext code is not returned and is not logged here.
-func (s *AuthService) RequestOTP(ctx context.Context, rawPhone string) (int, error) {
+// RequestOTPResult is either a pending code or a completed login.
+// Login is set only when OTP_REQUIRED is false.
+type RequestOTPResult struct {
+	ExpiresIn int
+	Login     *VerifyResult
+}
+
+// RequestOTP validates an E.164 number. When OTP is required it stores a hashed
+// code and asks the sender to deliver it. The plaintext code is not returned.
+// When OTP is not required it creates or loads the account and issues tokens.
+func (s *AuthService) RequestOTP(ctx context.Context, rawPhone string) (*RequestOTPResult, error) {
 	number, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return 0, apperr.InvalidPhone()
+		return nil, apperr.InvalidPhone()
+	}
+	if !s.cfg.OTPRequired {
+		result, err := s.login(ctx, number, time.Now().UTC(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("login without otp: %w", err)
+		}
+		return &RequestOTPResult{Login: result}, nil
 	}
 
 	now := time.Now().UTC()
 	since := now.Add(-s.cfg.OTPRateWindow)
 	count, err := s.otps.CountSince(ctx, number, since)
 	if err != nil {
-		return 0, fmt.Errorf("count otp requests: %w", err)
+		return nil, fmt.Errorf("count otp requests: %w", err)
 	}
 	if count >= int64(s.cfg.OTPRateMax) {
 		oldest, err := s.otps.OldestSince(ctx, number, since)
 		if err != nil {
-			return 0, fmt.Errorf("oldest otp request: %w", err)
+			return nil, fmt.Errorf("oldest otp request: %w", err)
 		}
 		retry := 1
 		if oldest != nil {
 			retry = secondsUntil(oldest.CreatedAt.Add(s.cfg.OTPRateWindow), now)
 		}
-		return 0, apperr.RateLimited(retry)
+		return nil, apperr.RateLimited(retry)
 	}
 
 	latest, err := s.otps.Latest(ctx, number)
 	if err != nil {
-		return 0, fmt.Errorf("latest otp: %w", err)
+		return nil, fmt.Errorf("latest otp: %w", err)
 	}
 	if latest != nil && now.Sub(latest.CreatedAt) < s.cfg.OTPMinInterval {
-		return 0, apperr.RateLimited(secondsUntil(latest.CreatedAt.Add(s.cfg.OTPMinInterval), now))
+		return nil, apperr.RateLimited(secondsUntil(latest.CreatedAt.Add(s.cfg.OTPMinInterval), now))
 	}
 
 	code, err := newOTPCode()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
 	if err != nil {
-		return 0, fmt.Errorf("hash otp: %w", err)
+		return nil, fmt.Errorf("hash otp: %w", err)
 	}
 	id, err := model.NewID()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	challenge := &model.OTPChallenge{
 		ID:          id,
@@ -127,20 +142,20 @@ func (s *AuthService) RequestOTP(ctx context.Context, rawPhone string) (int, err
 		return s.otps.Create(ctx, challenge)
 	})
 	if err != nil {
-		return 0, fmt.Errorf("store otp: %w", err)
+		return nil, fmt.Errorf("store otp: %w", err)
 	}
 
 	if err := s.sender.Send(ctx, number, code); err != nil {
 		if delErr := s.otps.Delete(ctx, challenge.ID); delErr != nil {
-			return 0, fmt.Errorf("send otp: %w (cleanup: %v)", err, delErr)
+			return nil, fmt.Errorf("send otp: %w (cleanup: %v)", err, delErr)
 		}
 		if errors.Is(err, sms.ErrNotConfigured) {
-			return 0, apperr.SMSUnavailable()
+			return nil, apperr.SMSUnavailable()
 		}
-		return 0, fmt.Errorf("send otp: %w", err)
+		return nil, fmt.Errorf("send otp: %w", err)
 	}
 
-	return int(s.cfg.OTPTTL.Seconds()), nil
+	return &RequestOTPResult{ExpiresIn: int(s.cfg.OTPTTL.Seconds())}, nil
 }
 
 // Verify checks a one-time code, creates the account on first success, and issues tokens.
@@ -172,6 +187,28 @@ func (s *AuthService) Verify(ctx context.Context, rawPhone, rawCode string) (*Ve
 		return nil, apperr.InvalidCode()
 	}
 
+	result, err := s.login(ctx, number, now, func(ctx context.Context) error {
+		ok, err := s.otps.Consume(ctx, challenge.ID, now)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errCodeUsed
+		}
+		return nil
+	})
+	if errors.Is(err, errCodeUsed) {
+		return nil, apperr.InvalidCode()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("verify otp: %w", err)
+	}
+	return result, nil
+}
+
+// login creates the account on first use, or loads it, then issues a session.
+// extra runs in the same transaction, which is how verify consumes the code.
+func (s *AuthService) login(ctx context.Context, number string, now time.Time, extra func(ctx context.Context) error) (*VerifyResult, error) {
 	sessionID, err := model.NewID()
 	if err != nil {
 		return nil, err
@@ -231,20 +268,13 @@ func (s *AuthService) Verify(ctx context.Context, rawPhone, rawCode string) (*Ve
 		if err := s.sessions.Create(ctx, session); err != nil {
 			return err
 		}
-		ok, err := s.otps.Consume(ctx, challenge.ID, now)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errCodeUsed
+		if extra != nil {
+			return extra(ctx)
 		}
 		return nil
 	})
-	if errors.Is(err, errCodeUsed) {
-		return nil, apperr.InvalidCode()
-	}
 	if err != nil {
-		return nil, fmt.Errorf("verify otp: %w", err)
+		return nil, err
 	}
 
 	access, err := s.tokens.Sign(user.ID, sessionID, now)

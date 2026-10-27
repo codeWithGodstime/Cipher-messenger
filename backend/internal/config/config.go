@@ -23,6 +23,9 @@ type Config struct {
 	OTPMinInterval time.Duration
 	OTPRateWindow  time.Duration
 	OTPRateMax     int
+	// OTPRequired controls POST /auth/otp. True, the default, stores and sends a code.
+	// OTP_REQUIRED=false skips the code and returns the same tokens as POST /auth/verify.
+	OTPRequired bool
 }
 
 func Load() (Config, error) {
@@ -54,6 +57,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	otpRequired, err := boolEnv("OTP_REQUIRED", true)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:         strings.ToLower(strings.TrimSpace(env("APP_ENV", "development"))),
@@ -67,6 +74,7 @@ func Load() (Config, error) {
 		OTPMinInterval: minInterval,
 		OTPRateWindow:  rateWindow,
 		OTPRateMax:     rateMax,
+		OTPRequired:    otpRequired,
 	}
 	if cfg.Port == "" {
 		return Config{}, fmt.Errorf("PORT must not be empty")
@@ -97,6 +105,21 @@ func durationEnv(key string, fallback time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a positive duration", key)
 	}
 	return d, nil
+}
+
+func boolEnv(key string, fallback bool) (bool, error) {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback, nil
+	}
+	switch v {
+	case "1", "true", "yes":
+		return true, nil
+	case "0", "false", "no":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be true or false", key)
+	}
 }
 
 func intEnv(key string, fallback int) (int, error) {

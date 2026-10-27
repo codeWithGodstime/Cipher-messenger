@@ -26,12 +26,16 @@ func (h *AuthHandler) RequestOTP(c *gin.Context) {
 		writeError(c, apperr.InvalidBody())
 		return
 	}
-	expiresIn, err := h.auth.RequestOTP(c.Request.Context(), req.Phone)
+	result, err := h.auth.RequestOTP(c.Request.Context(), req.Phone)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"expires_in": expiresIn})
+	if result.Login != nil {
+		writeSession(c, result.Login)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"expires_in": result.ExpiresIn})
 }
 
 func (h *AuthHandler) Verify(c *gin.Context) {
@@ -48,6 +52,10 @@ func (h *AuthHandler) Verify(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	writeSession(c, result)
+}
+
+func writeSession(c *gin.Context, result *service.VerifyResult) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  result.AccessToken,
 		"refresh_token": result.RefreshToken,

@@ -50,23 +50,25 @@ func main() {
 	health := handler.NewHealthHandler(
 		service.NewHealthService(repository.NewHealthRepository(db)),
 	)
+	users := repository.NewUserRepository(db)
 	sessions := repository.NewSessionRepository(db)
 	tokens := token.NewManager(cfg.JWTSecret, cfg.AccessTTL)
 	auth := handler.NewAuthHandler(service.NewAuthService(
 		cfg,
-		repository.NewUserRepository(db),
+		users,
 		repository.NewOTPRepository(db),
 		sessions,
 		database.NewTransactor(db),
 		sms.NewSender(cfg, log.Default()),
 		tokens,
 	))
+	profile := handler.NewProfileHandler(service.NewProfileService(users))
 
 	addr := ":" + cfg.Port
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      routes.New(health, auth, middleware.RequireAccess(tokens, sessions)),
+		Handler:      routes.New(health, auth, profile, middleware.RequireAccess(tokens, sessions)),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

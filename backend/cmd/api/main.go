@@ -10,10 +10,28 @@ import (
 	"syscall"
 	"time"
 
-	"messenger/backend/internal/server"
+	"messenger/backend/internal/database"
+	"messenger/backend/internal/handler"
+	"messenger/backend/internal/repository"
+	"messenger/backend/internal/routes"
+	"messenger/backend/internal/service"
 )
 
 func main() {
+	db, err := database.Open()
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	defer sqlDB.Close()
+
+	health := handler.NewHealthHandler(
+		service.NewHealthService(repository.NewHealthRepository(db)),
+	)
+
 	addr := ":8080"
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port
@@ -21,7 +39,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      server.New(),
+		Handler:      routes.New(health),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

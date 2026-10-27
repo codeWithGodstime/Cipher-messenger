@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"messenger/backend/internal/config"
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/handler"
 	"messenger/backend/internal/repository"
@@ -18,6 +19,11 @@ import (
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
 	db, err := database.Open()
 	if err != nil {
 		log.Fatalf("database: %v", err)
@@ -28,14 +34,15 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	if err := database.Migrate(db); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+
 	health := handler.NewHealthHandler(
 		service.NewHealthService(repository.NewHealthRepository(db)),
 	)
 
-	addr := ":8080"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
-	}
+	addr := ":" + cfg.Port
 
 	srv := &http.Server{
 		Addr:         addr,

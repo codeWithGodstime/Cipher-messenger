@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"messenger/backend/internal/apperr"
+	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/service"
 )
@@ -19,9 +20,7 @@ func NewAuthHandler(auth *service.AuthService) *AuthHandler {
 }
 
 func (h *AuthHandler) RequestOTP(c *gin.Context) {
-	var req struct {
-		Phone string `json:"phone"`
-	}
+	var req httpapi.OTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, apperr.InvalidBody())
 		return
@@ -35,14 +34,11 @@ func (h *AuthHandler) RequestOTP(c *gin.Context) {
 		writeSession(c, result.Login)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"expires_in": result.ExpiresIn})
+	c.JSON(http.StatusOK, httpapi.OTPPending{ExpiresIn: result.ExpiresIn})
 }
 
 func (h *AuthHandler) Verify(c *gin.Context) {
-	var req struct {
-		Phone string `json:"phone"`
-		Code  string `json:"code"`
-	}
+	var req httpapi.VerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, apperr.InvalidBody())
 		return
@@ -56,20 +52,17 @@ func (h *AuthHandler) Verify(c *gin.Context) {
 }
 
 func writeSession(c *gin.Context, result *service.VerifyResult) {
-	c.JSON(http.StatusOK, gin.H{
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
-		"token_type":    "Bearer",
-		"expires_in":    result.ExpiresIn,
-		"created":       result.Created,
-		"profile":       newProfileJSON(result.User),
-	})
+	c.JSON(http.StatusOK, httpapi.NewSession(
+		result.AccessToken,
+		result.RefreshToken,
+		result.ExpiresIn,
+		result.Created,
+		httpapi.NewProfile(result.User),
+	))
 }
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	var req struct {
-		RefreshToken string `json:"refresh_token"`
-	}
+	var req httpapi.RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, apperr.InvalidBody())
 		return
@@ -79,12 +72,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
-		"token_type":    "Bearer",
-		"expires_in":    result.ExpiresIn,
-	})
+	c.JSON(http.StatusOK, httpapi.NewTokenPair(result.AccessToken, result.RefreshToken, result.ExpiresIn))
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {

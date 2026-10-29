@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"messenger/backend/internal/apperr"
+	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/token"
 )
@@ -82,12 +83,9 @@ func bearerToken(header string) (string, bool) {
 func abortAuth(c *gin.Context, err error) {
 	var apiErr *apperr.Error
 	if errors.As(err, &apiErr) {
-		c.AbortWithStatusJSON(apiErr.Status, gin.H{"error": apiErr.Code, "message": apiErr.Message})
+		c.AbortWithStatusJSON(apiErr.Status, httpapi.NewError(apiErr.Code, apiErr.Message, apiErr.RetryAfter))
 		return
 	}
 	log.Printf("request failed: %v", err)
-	c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-		"error":   "internal",
-		"message": "Something went wrong.",
-	})
+	c.AbortWithStatusJSON(http.StatusInternalServerError, httpapi.InternalError())
 }

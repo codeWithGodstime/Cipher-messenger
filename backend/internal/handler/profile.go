@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"messenger/backend/internal/apperr"
+	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/service"
 )
@@ -29,7 +30,7 @@ func (h *ProfileHandler) Get(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, newProfileJSON(user))
+	c.JSON(http.StatusOK, httpapi.NewProfile(user))
 }
 
 func (h *ProfileHandler) Update(c *gin.Context) {
@@ -38,11 +39,7 @@ func (h *ProfileHandler) Update(c *gin.Context) {
 		writeError(c, apperr.Unauthorized())
 		return
 	}
-	var req struct {
-		DisplayName  *string `json:"display_name"`
-		About        *string `json:"about"`
-		ProfilePhoto *string `json:"profile_photo"`
-	}
+	var req httpapi.ProfileUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, apperr.InvalidBody())
 		return
@@ -56,5 +53,5 @@ func (h *ProfileHandler) Update(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, newProfileJSON(user))
+	c.JSON(http.StatusOK, httpapi.NewProfile(user))
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/service"
 )
 
@@ -18,8 +19,8 @@ func NewHealthHandler(health *service.HealthService) *HealthHandler {
 
 func (h *HealthHandler) Get(c *gin.Context) {
 	if err := h.health.Check(c.Request.Context()); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
+		c.JSON(http.StatusServiceUnavailable, httpapi.Health{Status: httpapi.StatusUnavailable})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, httpapi.Health{Status: httpapi.StatusOK})
 }

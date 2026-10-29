@@ -15,6 +15,7 @@ import (
 	"messenger/backend/internal/config"
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/handler"
+	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/redisclient"
 	"messenger/backend/internal/repository"
@@ -25,6 +26,16 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "-openapi" {
+		if len(os.Args) != 3 {
+			log.Fatal("usage: api -openapi <openapi.yaml>")
+		}
+		if err := httpapi.WriteOpenAPI(os.Args[2]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)

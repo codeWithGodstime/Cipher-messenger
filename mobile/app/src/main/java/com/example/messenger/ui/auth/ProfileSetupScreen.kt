@@ -73,6 +73,7 @@ fun ProfileSetupScreen(
     statusMessage: String? = null,
     onStatusShown: () -> Unit = {},
     onDone: ((String) -> Unit)? = null,
+    onEnter: (displayName: String) -> Unit = {},
 ) {
     var name by remember { mutableStateOf("") }
     var handle by remember { mutableStateOf("") }
@@ -282,7 +283,7 @@ fun ProfileSetupScreen(
 
             if (finished) {
                 Button(
-                    onClick = {},
+                    onClick = { onEnter(name.trim()) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),

@@ -25,7 +25,10 @@ private enum class AuthRoute {
 }
 
 @Composable
-fun AuthApp(modifier: Modifier = Modifier) {
+fun AuthApp(
+    modifier: Modifier = Modifier,
+    onEntered: (displayName: String, phoneLabel: String) -> Unit = { _, _ -> },
+) {
     val viewModel: AuthViewModel = viewModel(factory = AuthViewModelFactory(ApiClient.repository))
     var routeName by rememberSaveable { mutableStateOf(AuthRoute.Welcome.name) }
     var countryName by rememberSaveable { mutableStateOf(Countries.first().name) }
@@ -105,6 +108,9 @@ fun AuthApp(modifier: Modifier = Modifier) {
                 statusMessage = viewModel.profileError,
                 onStatusShown = viewModel::consumeProfileError,
                 onDone = viewModel::saveName,
+                onEnter = { displayName ->
+                    onEntered(displayName, country.displayNumber(digits))
+                },
             )
         }
     }

@@ -1,0 +1,399 @@
+openapi: 3.1.0
+info:
+  description: HTTP API for the Messenger app. Protected routes require an access
+    token.
+  title: Messenger API
+  version: 1.0.0
+paths:
+  /auth/logout:
+    post:
+      description: Revokes the session carried by the access token.
+      operationId: logout
+      responses:
+        "204":
+          description: The session was revoked.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Log out
+      tags:
+      - Messenger
+  /auth/otp:
+    post:
+      description: Sends a code when OTP is required. When OTP is disabled, signs
+        in and returns a session instead.
+      operationId: requestOtp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OTPRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OTPSuccess'
+          description: A pending code, or a session when OTP is disabled.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The phone number or JSON body is invalid.
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Too many code requests. retry_after and the Retry-After header
+            say how long to wait.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: OTP delivery is not configured.
+      summary: Request a one-time code
+      tags:
+      - Messenger
+  /auth/refresh:
+    post:
+      description: Rotates the refresh token and returns a new access token for the
+        same session.
+      operationId: refreshSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: New access and refresh tokens.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The refresh token is invalid or expired.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      summary: Refresh a session
+      tags:
+      - Messenger
+  /auth/verify:
+    post:
+      description: Checks the code, creates the account on first success, and returns
+        a session.
+      operationId: verifyOtp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          description: Session for the verified phone number.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The phone number, code, or JSON body is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The code is invalid or expired.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      summary: Verify a one-time code
+      tags:
+      - Messenger
+  /health:
+    get:
+      description: Reports whether the API can reach its database.
+      operationId: getHealth
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: The API is ready.
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: The API cannot reach its database.
+      summary: Check API health
+      tags:
+      - Messenger
+  /me:
+    get:
+      operationId: getProfile
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+          description: The signed-in profile.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Get the signed-in profile
+      tags:
+      - Messenger
+    patch:
+      description: Updates only the fields present in the body.
+      operationId: updateProfile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+          description: The updated profile.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body or a profile field is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Update the signed-in profile
+      tags:
+      - Messenger
+components:
+  schemas:
+    Error:
+      properties:
+        error:
+          description: Stable machine-readable code.
+          type: string
+        message:
+          type: string
+        retry_after:
+          description: Seconds to wait before retrying. Present when error is rate_limited.
+          type: integer
+      required:
+      - error
+      - message
+      type: object
+    Health:
+      properties:
+        status:
+          description: ok when the API can reach its database, unavailable otherwise.
+          type: string
+      required:
+      - status
+      type: object
+    OTPPending:
+      properties:
+        expires_in:
+          description: Seconds until the code expires.
+          type: integer
+      required:
+      - expires_in
+      type: object
+    OTPRequest:
+      properties:
+        phone:
+          description: Phone number in E.164 format.
+          type: string
+      required:
+      - phone
+      type: object
+    OTPSuccess:
+      oneOf:
+      - $ref: '#/components/schemas/OTPPending'
+      - $ref: '#/components/schemas/Session'
+    Profile:
+      properties:
+        about:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        display_name:
+          type: string
+        id:
+          type: string
+        phone:
+          description: Phone number in E.164 format.
+          type: string
+        profile_photo:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - id
+      - phone
+      - display_name
+      - about
+      - profile_photo
+      - created_at
+      - updated_at
+      type: object
+    ProfileUpdate:
+      properties:
+        about:
+          description: Up to 139 characters.
+          type:
+          - "null"
+          - string
+        display_name:
+          description: 1 to 64 characters.
+          type:
+          - "null"
+          - string
+        profile_photo:
+          description: Up to 2048 characters.
+          type:
+          - "null"
+          - string
+      type: object
+    RefreshRequest:
+      properties:
+        refresh_token:
+          type: string
+      required:
+      - refresh_token
+      type: object
+    Session:
+      properties:
+        access_token:
+          type: string
+        created:
+          description: True when this login created the account.
+          type: boolean
+        expires_in:
+          description: Access token lifetime in seconds.
+          type: integer
+        profile:
+          $ref: '#/components/schemas/Profile'
+        refresh_token:
+          type: string
+        token_type:
+          description: Always Bearer.
+          type: string
+      required:
+      - access_token
+      - refresh_token
+      - token_type
+      - expires_in
+      - created
+      - profile
+      type: object
+    TokenPair:
+      properties:
+        access_token:
+          type: string
+        expires_in:
+          description: Access token lifetime in seconds.
+          type: integer
+        refresh_token:
+          type: string
+        token_type:
+          description: Always Bearer.
+          type: string
+      required:
+      - access_token
+      - refresh_token
+      - token_type
+      - expires_in
+      type: object
+    VerifyRequest:
+      properties:
+        code:
+          description: Six-digit one-time code.
+          type: string
+        phone:
+          description: Phone number in E.164 format.
+          type: string
+      required:
+      - phone
+      - code
+      type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Access token from login, verify, or refresh.
+      scheme: bearer
+      type: http

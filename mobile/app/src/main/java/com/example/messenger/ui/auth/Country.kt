@@ -27,3 +27,5 @@ fun Country.displayNumber(digits: String): String {
     val national = formatNational(digits, this)
     return if (national.isEmpty()) dialCode else "$dialCode $national"
 }
+
+fun Country.e164(digits: String): String = dialCode + digits.filter { it.isDigit() }

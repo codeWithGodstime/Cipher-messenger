@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Local API_BASE_URL values use http. Release builds keep cleartext off. -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

@@ -43,6 +43,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,15 +68,28 @@ import kotlinx.coroutines.launch
 fun ProfileSetupScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    saving: Boolean = false,
+    saved: Boolean = false,
+    statusMessage: String? = null,
+    onStatusShown: () -> Unit = {},
+    onDone: ((String) -> Unit)? = null,
 ) {
     var name by remember { mutableStateOf("") }
     var handle by remember { mutableStateOf("") }
     var hidePhone by remember { mutableStateOf(true) }
-    var finished by remember { mutableStateOf(false) }
+    var skipped by remember { mutableStateOf(false) }
+    var previewDone by remember { mutableStateOf(false) }
+    val finished = saved || skipped || previewDone
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val spacing = CipherTheme.spacing
     val canFinish = name.trim().length >= 2
+
+    LaunchedEffect(statusMessage) {
+        val message = statusMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        onStatusShown()
+    }
 
     Scaffold(
         modifier = modifier,
@@ -135,8 +149,8 @@ fun ProfileSetupScreen(
                 horizontalArrangement = Arrangement.End,
             ) {
                 Surface(
-                    onClick = { finished = true },
-                    enabled = !finished,
+                    onClick = { skipped = true },
+                    enabled = !finished && !saving,
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
@@ -288,9 +302,12 @@ fun ProfileSetupScreen(
                 }
             } else {
                 CipherPrimaryButton(
-                    text = "Done",
-                    onClick = { finished = true },
-                    enabled = canFinish,
+                    text = if (saving) "Saving…" else "Done",
+                    onClick = {
+                        val submit = onDone
+                        if (submit == null) previewDone = true else submit(name.trim())
+                    },
+                    enabled = canFinish && !saving,
                     pill = false,
                     icon = Icons.Filled.Check,
                     textStyle = MaterialTheme.typography.headlineSmall,

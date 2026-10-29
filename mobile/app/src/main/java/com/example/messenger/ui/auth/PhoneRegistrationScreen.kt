@@ -33,6 +33,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,9 @@ fun PhoneRegistrationScreen(
     onBack: () -> Unit,
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
+    submitting: Boolean = false,
+    statusMessage: String? = null,
+    onStatusShown: () -> Unit = {},
 ) {
     var pickerOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -73,6 +77,12 @@ fun PhoneRegistrationScreen(
     val filtered = Countries.filter {
         val haystack = "${it.name} ${it.dialCode}".lowercase()
         haystack.contains(query.trim().lowercase())
+    }
+
+    LaunchedEffect(statusMessage) {
+        val message = statusMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        onStatusShown()
     }
 
     Scaffold(
@@ -171,9 +181,9 @@ fun PhoneRegistrationScreen(
             PrivacyBanner()
             Spacer(Modifier.size(spacing.md))
             CipherPrimaryButton(
-                text = "Continue",
+                text = if (submitting) "Sending…" else "Continue",
                 onClick = onContinue,
-                enabled = complete,
+                enabled = complete && !submitting,
                 icon = Icons.AutoMirrored.Filled.ArrowForward,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             )

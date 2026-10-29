@@ -66,7 +66,7 @@ import com.example.messenger.ui.theme.MessengerTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class VerifyPhase {
+enum class VerifyPhase {
     Waiting,
     Checking,
     Verified,
@@ -76,18 +76,25 @@ private enum class VerifyPhase {
 @Composable
 fun VerificationScreen(
     phoneLabel: String,
+    code: String,
+    onCodeChange: (String) -> Unit,
+    phase: VerifyPhase,
+    onSubmit: (String) -> Unit,
+    onResend: () -> Unit,
     onBack: () -> Unit,
     onEditPhone: () -> Unit,
     onVerified: () -> Unit,
     modifier: Modifier = Modifier,
+    resendGeneration: Int = 0,
+    statusMessage: String? = null,
+    onStatusShown: () -> Unit = {},
 ) {
-    var code by remember { mutableStateOf("") }
-    var secondsLeft by remember { mutableIntStateOf(42) }
-    var phase by remember { mutableStateOf(VerifyPhase.Waiting) }
+    var secondsLeft by remember(resendGeneration) { mutableIntStateOf(42) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val spacing = CipherTheme.spacing
+    val entryLocked = phase == VerifyPhase.Checking || phase == VerifyPhase.Verified
 
     LaunchedEffect(secondsLeft) {
         if (secondsLeft == 0) return@LaunchedEffect
@@ -95,17 +102,16 @@ fun VerificationScreen(
         secondsLeft -= 1
     }
 
-    LaunchedEffect(code) {
-        if (code.length < 6) {
-            phase = VerifyPhase.Waiting
-            return@LaunchedEffect
-        }
-        phase = VerifyPhase.Checking
-        delay(800)
-        if (code.length < 6) return@LaunchedEffect
-        phase = VerifyPhase.Verified
+    LaunchedEffect(phase) {
+        if (phase != VerifyPhase.Verified) return@LaunchedEffect
         delay(650)
-        if (code.length == 6) onVerified()
+        onVerified()
+    }
+
+    LaunchedEffect(statusMessage) {
+        val message = statusMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        onStatusShown()
     }
 
     Scaffold(
@@ -218,7 +224,7 @@ fun VerificationScreen(
                         text = "Resend code",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { secondsLeft = 42 },
+                        modifier = Modifier.clickable(onClick = onResend),
                     )
                 }
                 Text(
@@ -241,13 +247,15 @@ fun VerificationScreen(
             Spacer(Modifier.weight(1f))
             NumericKeypad(
                 onDigit = { digit ->
-                    if (code.length < 6 && phase != VerifyPhase.Checking) {
-                        code += digit
+                    if (code.length < 6 && !entryLocked) {
+                        val next = code + digit
+                        onCodeChange(next)
+                        if (next.length == 6) onSubmit(next)
                     }
                 },
                 onBackspace = {
-                    if (code.isNotEmpty() && phase != VerifyPhase.Verified) {
-                        code = code.dropLast(1)
+                    if (code.isNotEmpty() && !entryLocked) {
+                        onCodeChange(code.dropLast(1))
                     }
                 },
                 keyHeight = 56.dp,
@@ -267,8 +275,9 @@ fun VerificationScreen(
                                 scope.launch {
                                     snackbarHostState.showSnackbar("No digits on the clipboard.")
                                 }
-                            } else {
-                                code = pasted
+                            } else if (!entryLocked) {
+                                onCodeChange(pasted)
+                                if (pasted.length == 6) onSubmit(pasted)
                             }
                         },
                     )
@@ -428,9 +437,15 @@ private fun Caret() {
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun VerificationPreview() {
+    var code by remember { mutableStateOf("") }
     MessengerTheme {
         VerificationScreen(
-            phoneLabel = "+1 (555) 019-2834",
+            phoneLabel = "+234 801 234 5678",
+            code = code,
+            onCodeChange = { code = it },
+            phase = VerifyPhase.Waiting,
+            onSubmit = {},
+            onResend = {},
             onBack = {},
             onEditPhone = {},
             onVerified = {},

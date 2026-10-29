@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="cipher_surface">#FFFAF8FF</color>
+    <color name="cipher_surface_lowest">#FFFFFFFF</color>
+    <color name="cipher_primary">#FF004AC6</color>
+    <color name="cipher_on_primary">#FFFFFFFF</color>
+</resources>

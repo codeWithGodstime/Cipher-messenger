@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Cipher</string>
+    <string name="user_name">Hello, %1$s, nice to meet you</string>
+</resources>

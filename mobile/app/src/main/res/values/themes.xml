@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        This XML theme is only the window around Compose.
+        Compose paints its own colors from MessengerTheme.
+        The XML values exist so the system splash and the first frame
+        before composition use the same surface, with no white flash.
+    -->
+    <style name="Theme.Messenger" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/cipher_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <!--
+        Android 12+ draws this splash before MainActivity composition.
+        postSplashScreenTheme swaps back to Theme.Messenger once Compose starts.
+        The icon is inset so the shield sits inside the circular mask.
+    -->
+    <style name="Theme.Messenger.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/cipher_surface</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_cipher_splash</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/cipher_surface_lowest</item>
+        <item name="postSplashScreenTheme">@style/Theme.Messenger</item>
+    </style>
+</resources>

@@ -1,0 +1,45 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# ART / Dalvik
+*.dex
+
+# Java / Kotlin compiler output
+*.class
+.kotlin/
+
+# Gradle
+.gradle/
+build/
+captures/
+
+# Machine-local SDK path
+local.properties
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.navigation/
+
+# Native builds
+.externalNativeBuild/
+.cxx/
+obj/
+
+# Signing material
+*.jks
+*.keystore
+keystore.properties
+
+# Logs and heap dumps
+*.log
+*.hprof
+
+# OS junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini

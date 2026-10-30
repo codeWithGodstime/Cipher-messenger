@@ -10,7 +10,7 @@ const DefaultAbout = "Hey there! I am using Messenger"
 
 type User struct {
 	ID           string    `gorm:"primaryKey;size:36"`
-	Phone        string    `gorm:"size:16;not null;uniqueIndex"`
+	Username     string    `gorm:"size:32;not null;uniqueIndex"`
 	DisplayName  string    `gorm:"size:64;not null;default:''"`
 	About        string    `gorm:"size:139;not null"`
 	ProfilePhoto string    `gorm:"size:2048;not null;default:''"`

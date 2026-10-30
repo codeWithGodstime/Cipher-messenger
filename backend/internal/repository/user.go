@@ -16,7 +16,7 @@ var (
 )
 
 type UserRepository interface {
-	FindByPhone(ctx context.Context, phone string) (*model.User, error)
+	FindByUsername(ctx context.Context, username string) (*model.User, error)
 	FindByID(ctx context.Context, id string) (*model.User, error)
 	FindByIDs(ctx context.Context, ids []string) ([]model.User, error)
 	Create(ctx context.Context, user *model.User) error
@@ -35,9 +35,9 @@ func (r *userRepository) conn(ctx context.Context) *gorm.DB {
 	return database.FromContext(ctx, r.db)
 }
 
-func (r *userRepository) FindByPhone(ctx context.Context, phone string) (*model.User, error) {
+func (r *userRepository) FindByUsername(ctx context.Context, username string) (*model.User, error) {
 	var user model.User
-	err := r.conn(ctx).Where("phone = ?", phone).First(&user).Error
+	err := r.conn(ctx).Where("username = ?", username).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

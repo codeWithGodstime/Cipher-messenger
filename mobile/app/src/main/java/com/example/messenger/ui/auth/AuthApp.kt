@@ -20,8 +20,7 @@ import com.example.messenger.data.auth.SessionStore
 
 private enum class AuthRoute {
     Welcome,
-    Phone,
-    Verify,
+    Username,
     Profile,
 }
 
@@ -29,22 +28,34 @@ private enum class AuthRoute {
 fun AuthApp(
     sessionStore: SessionStore,
     modifier: Modifier = Modifier,
-    onEntered: (displayName: String, phoneLabel: String) -> Unit = { _, _ -> },
+    onEntered: (displayName: String, usernameLabel: String) -> Unit = { _, _ -> },
 ) {
     val viewModel: AuthViewModel = viewModel(
         factory = AuthViewModelFactory(ApiClient.repository, sessionStore),
     )
     var routeName by rememberSaveable { mutableStateOf(AuthRoute.Welcome.name) }
-    var countryName by rememberSaveable { mutableStateOf(Countries.first().name) }
-    var digits by rememberSaveable { mutableStateOf("") }
+    var modeName by rememberSaveable { mutableStateOf(AuthMode.Signup.name) }
+    var username by rememberSaveable { mutableStateOf("") }
     val route = AuthRoute.valueOf(routeName)
-    val country = Countries.first { it.name == countryName }
+    val mode = AuthMode.valueOf(modeName)
+
+    fun goBack() {
+        when (route) {
+            AuthRoute.Welcome -> Unit
+            AuthRoute.Username -> routeName = AuthRoute.Welcome.name
+            AuthRoute.Profile -> routeName = AuthRoute.Username.name
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.authEvents.collect { event ->
             when (event) {
-                AuthEvent.OpenVerify -> routeName = AuthRoute.Verify.name
                 AuthEvent.OpenProfile -> routeName = AuthRoute.Profile.name
+                AuthEvent.EnterHome -> {
+                    val label = viewModel.usernameLabel()
+                    val name = sessionStore.displayName.ifBlank { label }
+                    onEntered(name, label)
+                }
             }
         }
     }
@@ -66,54 +77,34 @@ fun AuthApp(
     ) { current ->
         when (current) {
             AuthRoute.Welcome -> WelcomeScreen(
-                onGetStarted = { routeName = AuthRoute.Phone.name },
-            )
-            AuthRoute.Phone -> PhoneRegistrationScreen(
-                country = country,
-                digits = digits,
-                onCountryChange = { next ->
-                    countryName = next.name
-                    if (digits.length > next.digitCount) {
-                        digits = digits.take(next.digitCount)
-                    }
+                onCreateAccount = {
+                    modeName = AuthMode.Signup.name
+                    routeName = AuthRoute.Username.name
                 },
-                onDigitsChange = { digits = it },
-                onBack = { routeName = AuthRoute.Welcome.name },
-                onContinue = { viewModel.requestCode(country.e164(digits)) },
-                submitting = viewModel.phoneLoading,
-                statusMessage = viewModel.phoneError,
-                onStatusShown = viewModel::consumePhoneError,
+                onSignIn = {
+                    modeName = AuthMode.Login.name
+                    routeName = AuthRoute.Username.name
+                },
             )
-            AuthRoute.Verify -> VerificationScreen(
-                phoneLabel = country.displayNumber(digits),
-                code = viewModel.code,
-                onCodeChange = viewModel::updateCode,
-                phase = viewModel.verifyPhase,
-                onSubmit = viewModel::submitCode,
-                onResend = viewModel::resendCode,
-                resendGeneration = viewModel.resendGeneration,
-                statusMessage = viewModel.verifyError,
-                onStatusShown = viewModel::consumeVerifyError,
-                onBack = { routeName = AuthRoute.Phone.name },
-                onEditPhone = { routeName = AuthRoute.Phone.name },
-                onVerified = { routeName = AuthRoute.Profile.name },
+            AuthRoute.Username -> UsernameAuthScreen(
+                mode = mode,
+                username = username,
+                onUsernameChange = { username = it },
+                onBack = { goBack() },
+                onContinue = { viewModel.submitUsername(username, mode) },
+                submitting = viewModel.usernameLoading,
+                statusMessage = viewModel.usernameError,
+                onStatusShown = viewModel::consumeUsernameError,
             )
             AuthRoute.Profile -> ProfileSetupScreen(
-                onBack = {
-                    viewModel.prepareVerify()
-                    routeName = if (viewModel.codeStepRequired) {
-                        AuthRoute.Verify.name
-                    } else {
-                        AuthRoute.Phone.name
-                    }
-                },
+                onBack = { goBack() },
                 saving = viewModel.profileSaving,
                 saved = viewModel.profileSaved,
                 statusMessage = viewModel.profileError,
                 onStatusShown = viewModel::consumeProfileError,
                 onDone = viewModel::saveName,
                 onEnter = { displayName ->
-                    onEntered(displayName, country.displayNumber(digits))
+                    onEntered(displayName, viewModel.usernameLabel().ifBlank { username })
                 },
             )
         }

@@ -250,7 +250,7 @@ fun ProfileSetupScreen(
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Hide phone from non-contacts",
+                            text = "Hide username from non-contacts",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,

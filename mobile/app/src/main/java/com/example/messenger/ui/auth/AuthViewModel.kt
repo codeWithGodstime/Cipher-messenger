@@ -1,7 +1,6 @@
 package com.example.messenger.ui.auth
 
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -9,19 +8,23 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.Session
+import com.example.messenger.data.auth.AuthCall
 import com.example.messenger.data.auth.AuthRepository
-import com.example.messenger.data.auth.OtpCall
 import com.example.messenger.data.auth.ProfileCall
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenRefresher
-import com.example.messenger.data.auth.VerifyCall
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
+enum class AuthMode {
+    Login,
+    Signup,
+}
+
 sealed interface AuthEvent {
-    data object OpenVerify : AuthEvent
     data object OpenProfile : AuthEvent
+    data object EnterHome : AuthEvent
 }
 
 class AuthViewModel(
@@ -29,18 +32,9 @@ class AuthViewModel(
     private val sessionStore: SessionStore,
     private val tokens: TokenRefresher,
 ) : ViewModel() {
-    var phoneLoading by mutableStateOf(false)
+    var usernameLoading by mutableStateOf(false)
         private set
-    var phoneError by mutableStateOf<String?>(null)
-        private set
-
-    var code by mutableStateOf("")
-        private set
-    var verifyPhase by mutableStateOf(VerifyPhase.Waiting)
-        private set
-    var verifyError by mutableStateOf<String?>(null)
-        private set
-    var resendGeneration by mutableIntStateOf(0)
+    var usernameError by mutableStateOf<String?>(null)
         private set
 
     var profileSaving by mutableStateOf(false)
@@ -50,93 +44,40 @@ class AuthViewModel(
     var profileError by mutableStateOf<String?>(null)
         private set
 
-    /** True after a code was sent. False when login skipped the code and opened profile. */
-    var codeStepRequired by mutableStateOf(false)
-        private set
-
     private val events = Channel<AuthEvent>(capacity = Channel.BUFFERED)
     val authEvents = events.receiveAsFlow()
 
-    private var phoneE164: String = ""
-    private var resendInFlight = false
+    private var lastUsername: String = ""
 
-    fun requestCode(e164: String) {
-        if (phoneLoading) return
-        phoneE164 = e164
-        viewModelScope.launch {
-            phoneLoading = true
-            phoneError = null
-            when (val result = repository.requestOtp(e164)) {
-                is OtpCall.CodeSent -> {
-                    codeStepRequired = true
-                    prepareVerify()
-                    phoneLoading = false
-                    events.send(AuthEvent.OpenVerify)
-                }
-                is OtpCall.SignedIn -> {
-                    rememberSession(result.session)
-                    codeStepRequired = false
-                    phoneLoading = false
-                    events.send(AuthEvent.OpenProfile)
-                }
-                is OtpCall.Failed -> {
-                    phoneLoading = false
-                    phoneError = result.message
-                }
-            }
+    fun submitUsername(raw: String, mode: AuthMode) {
+        if (usernameLoading) return
+        val username = raw.trim().lowercase()
+        if (username.isEmpty()) {
+            usernameError = "Enter a username to continue."
+            return
         }
-    }
-
-    fun prepareVerify() {
-        code = ""
-        verifyPhase = VerifyPhase.Waiting
-        verifyError = null
-    }
-
-    fun updateCode(next: String) {
-        if (verifyPhase == VerifyPhase.Checking || verifyPhase == VerifyPhase.Verified) return
-        code = next
-    }
-
-    fun submitCode(submitted: String) {
-        if (verifyPhase == VerifyPhase.Checking || verifyPhase == VerifyPhase.Verified) return
+        lastUsername = username
         viewModelScope.launch {
-            verifyPhase = VerifyPhase.Checking
-            verifyError = null
-            when (val result = repository.verify(phoneE164, submitted)) {
-                is VerifyCall.Success -> {
-                    rememberSession(result.session)
-                    verifyPhase = VerifyPhase.Verified
-                }
-                is VerifyCall.Failed -> {
-                    code = ""
-                    verifyPhase = VerifyPhase.Waiting
-                    verifyError = result.message
-                }
+            usernameLoading = true
+            usernameError = null
+            val result = when (mode) {
+                AuthMode.Login -> repository.login(username)
+                AuthMode.Signup -> repository.signup(username)
             }
-        }
-    }
-
-    fun resendCode() {
-        if (resendInFlight || verifyPhase == VerifyPhase.Checking || phoneE164.isEmpty()) return
-        resendInFlight = true
-        viewModelScope.launch {
-            try {
-                when (val result = repository.requestOtp(phoneE164)) {
-                    is OtpCall.CodeSent -> {
-                        code = ""
-                        verifyPhase = VerifyPhase.Waiting
-                        resendGeneration += 1
-                    }
-                    is OtpCall.SignedIn -> {
-                        rememberSession(result.session)
-                        codeStepRequired = false
+            when (result) {
+                is AuthCall.Success -> {
+                    rememberSession(result.session)
+                    usernameLoading = false
+                    if (mode == AuthMode.Signup || result.session.profile.displayName.isBlank()) {
                         events.send(AuthEvent.OpenProfile)
+                    } else {
+                        events.send(AuthEvent.EnterHome)
                     }
-                    is OtpCall.Failed -> verifyError = result.message
                 }
-            } finally {
-                resendInFlight = false
+                is AuthCall.Failed -> {
+                    usernameLoading = false
+                    usernameError = result.message
+                }
             }
         }
     }
@@ -165,20 +106,19 @@ class AuthViewModel(
         }
     }
 
-    fun consumePhoneError() {
-        phoneError = null
-    }
-
-    fun consumeVerifyError() {
-        verifyError = null
+    fun consumeUsernameError() {
+        usernameError = null
     }
 
     fun consumeProfileError() {
         profileError = null
     }
 
+    fun usernameLabel(): String = lastUsername.ifBlank { sessionStore.usernameLabel }
+
     private fun rememberSession(session: Session) {
         sessionStore.rememberSession(session)
+        lastUsername = session.profile.username
     }
 }
 

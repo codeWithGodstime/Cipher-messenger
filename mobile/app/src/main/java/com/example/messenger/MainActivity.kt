@@ -27,13 +27,13 @@ class MainActivity : ComponentActivity() {
                 val tokenRefresher = remember { ApiClient.bind(sessionStore).tokenRefresher }
                 var signedIn by remember { mutableStateOf(sessionStore.isLoggedIn) }
                 var displayName by remember { mutableStateOf(sessionStore.displayName) }
-                var phoneLabel by remember { mutableStateOf(sessionStore.phoneLabel) }
+                var usernameLabel by remember { mutableStateOf(sessionStore.usernameLabel) }
 
                 LaunchedEffect(tokenRefresher) {
                     tokenRefresher.sessionLost.collect {
                         signedIn = false
                         displayName = ""
-                        phoneLabel = ""
+                        usernameLabel = ""
                     }
                 }
 
@@ -41,15 +41,15 @@ class MainActivity : ComponentActivity() {
                     MessengerHome(
                         sessionStore = sessionStore,
                         displayName = displayName,
-                        phoneLabel = phoneLabel,
+                        usernameLabel = usernameLabel,
                     )
                 } else {
                     AuthApp(
                         sessionStore = sessionStore,
-                        onEntered = { name, phone ->
-                            sessionStore.markLoggedIn(name, phone)
+                        onEntered = { name, username ->
+                            sessionStore.markLoggedIn(name, username)
                             displayName = name
-                            phoneLabel = phone
+                            usernameLabel = username
                             signedIn = true
                         },
                     )

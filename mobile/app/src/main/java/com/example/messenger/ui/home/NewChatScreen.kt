@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ChevronRight
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Dialpad
@@ -273,7 +273,7 @@ private fun ActionCard(
                 )
             }
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ChevronRight,
+                imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.outline,
             )
@@ -431,7 +431,7 @@ private fun ContactRow(
             }
             if (contact.group) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ChevronRight,
+                    imageVector = Icons.Filled.ChevronRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.outline,
                 )

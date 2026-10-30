@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.messenger.data.api.ApiClient
+import com.example.messenger.data.auth.SessionStore
 
 private enum class AuthRoute {
     Welcome,
@@ -26,10 +27,13 @@ private enum class AuthRoute {
 
 @Composable
 fun AuthApp(
+    sessionStore: SessionStore,
     modifier: Modifier = Modifier,
     onEntered: (displayName: String, phoneLabel: String) -> Unit = { _, _ -> },
 ) {
-    val viewModel: AuthViewModel = viewModel(factory = AuthViewModelFactory(ApiClient.repository))
+    val viewModel: AuthViewModel = viewModel(
+        factory = AuthViewModelFactory(ApiClient.repository, sessionStore),
+    )
     var routeName by rememberSaveable { mutableStateOf(AuthRoute.Welcome.name) }
     var countryName by rememberSaveable { mutableStateOf(Countries.first().name) }
     var digits by rememberSaveable { mutableStateOf("") }

@@ -7,9 +7,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.messenger.data.api.Session
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.OtpCall
 import com.example.messenger.data.auth.ProfileCall
+import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.VerifyCall
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -22,6 +24,7 @@ sealed interface AuthEvent {
 
 class AuthViewModel(
     private val repository: AuthRepository,
+    private val sessionStore: SessionStore,
 ) : ViewModel() {
     var phoneLoading by mutableStateOf(false)
         private set
@@ -52,7 +55,7 @@ class AuthViewModel(
     val authEvents = events.receiveAsFlow()
 
     private var phoneE164: String = ""
-    private var accessToken: String? = null
+    private var accessToken: String? = sessionStore.accessToken
     private var resendInFlight = false
 
     fun requestCode(e164: String) {
@@ -69,7 +72,7 @@ class AuthViewModel(
                     events.send(AuthEvent.OpenVerify)
                 }
                 is OtpCall.SignedIn -> {
-                    rememberSession(result.session.accessToken)
+                    rememberSession(result.session)
                     codeStepRequired = false
                     phoneLoading = false
                     events.send(AuthEvent.OpenProfile)
@@ -100,7 +103,7 @@ class AuthViewModel(
             verifyError = null
             when (val result = repository.verify(phoneE164, submitted)) {
                 is VerifyCall.Success -> {
-                    rememberSession(result.session.accessToken)
+                    rememberSession(result.session)
                     verifyPhase = VerifyPhase.Verified
                 }
                 is VerifyCall.Failed -> {
@@ -124,7 +127,7 @@ class AuthViewModel(
                         resendGeneration += 1
                     }
                     is OtpCall.SignedIn -> {
-                        rememberSession(result.session.accessToken)
+                        rememberSession(result.session)
                         codeStepRequired = false
                         events.send(AuthEvent.OpenProfile)
                     }
@@ -148,6 +151,7 @@ class AuthViewModel(
             profileError = null
             when (val result = repository.updateDisplayName(token, name)) {
                 is ProfileCall.Success -> {
+                    sessionStore.updateDisplayName(result.profile.displayName)
                     profileSaving = false
                     profileSaved = true
                 }
@@ -171,18 +175,20 @@ class AuthViewModel(
         profileError = null
     }
 
-    private fun rememberSession(token: String) {
-        accessToken = token
+    private fun rememberSession(session: Session) {
+        accessToken = session.accessToken
+        sessionStore.rememberSession(session)
     }
 }
 
 class AuthViewModelFactory(
     private val repository: AuthRepository,
+    private val sessionStore: SessionStore,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return AuthViewModel(repository) as T
+            return AuthViewModel(repository, sessionStore) as T
         }
         error("Unknown ViewModel: ${modelClass.name}")
     }

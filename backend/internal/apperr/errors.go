@@ -20,6 +20,22 @@ func InvalidPhone() *Error {
 	return &Error{Status: http.StatusBadRequest, Code: "invalid_phone", Message: "Phone number must be in E.164 format, for example +14155552671."}
 }
 
+func InvalidUsername() *Error {
+	return &Error{
+		Status:  http.StatusBadRequest,
+		Code:    "invalid_username",
+		Message: "Username must be 3–32 characters, start with a letter, and use only letters, digits, or underscores.",
+	}
+}
+
+func UserDoesNotExist() *Error {
+	return &Error{Status: http.StatusNotFound, Code: "user_not_found", Message: "User does not exist."}
+}
+
+func UsernameTaken() *Error {
+	return &Error{Status: http.StatusConflict, Code: "username_taken", Message: "Username is already taken."}
+}
+
 func Validation(message string) *Error {
 	return &Error{Status: http.StatusBadRequest, Code: "validation_error", Message: message}
 }

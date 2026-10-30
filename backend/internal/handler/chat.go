@@ -51,7 +51,7 @@ func (h *ChatHandler) OpenConversation(c *gin.Context) {
 		writeError(c, apperr.InvalidBody())
 		return
 	}
-	summary, err := h.chat.OpenDM(c.Request.Context(), userID, req.UserID, req.Phone)
+	summary, err := h.chat.OpenDM(c.Request.Context(), userID, req.UserID, req.Username)
 	if err != nil {
 		writeError(c, err)
 		return

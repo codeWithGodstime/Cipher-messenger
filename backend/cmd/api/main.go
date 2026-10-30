@@ -17,11 +17,9 @@ import (
 	"messenger/backend/internal/handler"
 	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/middleware"
-	"messenger/backend/internal/redisclient"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/routes"
 	"messenger/backend/internal/service"
-	"messenger/backend/internal/sms"
 	"messenger/backend/internal/token"
 	"messenger/backend/internal/ws"
 )
@@ -66,22 +64,11 @@ func main() {
 	users := repository.NewUserRepository(db)
 	sessions := repository.NewSessionRepository(db)
 	tokens := token.NewManager(cfg.JWTSecret, cfg.AccessTTL)
-	otps := repository.NewDisabledOTPRepository()
-	if cfg.OTPRequired {
-		rdb, err := redisclient.Open(cfg.RedisURL)
-		if err != nil {
-			log.Fatalf("redis: %v", err)
-		}
-		defer rdb.Close()
-		otps = repository.NewRedisOTPRepository(rdb)
-	}
 	auth := handler.NewAuthHandler(service.NewAuthService(
 		cfg,
 		users,
-		otps,
 		sessions,
 		database.NewTransactor(db),
-		sms.NewSender(cfg, log.Default()),
 		tokens,
 	))
 	profile := handler.NewProfileHandler(service.NewProfileService(users))

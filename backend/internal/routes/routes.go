@@ -19,8 +19,8 @@ func New(
 ) http.Handler {
 	r := gin.Default()
 	r.GET("/health", health.Get)
-	r.POST("/auth/otp", auth.RequestOTP)
-	r.POST("/auth/verify", auth.Verify)
+	r.POST("/auth/login", auth.Login)
+	r.POST("/auth/signup", auth.Signup)
 	r.POST("/auth/refresh", auth.Refresh)
 	r.POST("/auth/logout", authenticate, auth.Logout)
 	r.GET("/me", authenticate, profile.Get)

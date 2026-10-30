@@ -49,7 +49,7 @@ func (h *ContactHandler) Add(c *gin.Context) {
 		writeError(c, apperr.InvalidBody())
 		return
 	}
-	summary, err := h.contacts.Add(c.Request.Context(), userID, req.UserID, req.Phone)
+	summary, err := h.contacts.Add(c.Request.Context(), userID, req.UserID, req.Username)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -76,7 +76,7 @@ func (h *ContactHandler) Lookup(c *gin.Context) {
 		writeError(c, apperr.Unauthorized())
 		return
 	}
-	peer, err := h.contacts.LookupByPhone(c.Request.Context(), userID, c.Query("phone"))
+	peer, err := h.contacts.LookupByUsername(c.Request.Context(), userID, c.Query("username"))
 	if err != nil {
 		writeError(c, err)
 		return

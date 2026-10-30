@@ -7,8 +7,8 @@ import (
 
 	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/model"
-	"messenger/backend/internal/phone"
 	"messenger/backend/internal/repository"
+	"messenger/backend/internal/username"
 )
 
 type ContactService struct {
@@ -53,8 +53,8 @@ func (s *ContactService) List(ctx context.Context, ownerID string) ([]ContactSum
 	return out, nil
 }
 
-func (s *ContactService) Add(ctx context.Context, ownerID, peerUserID, rawPhone string) (*ContactSummary, error) {
-	peer, err := resolvePeer(ctx, s.users, ownerID, peerUserID, rawPhone)
+func (s *ContactService) Add(ctx context.Context, ownerID, peerUserID, rawUsername string) (*ContactSummary, error) {
+	peer, err := resolvePeer(ctx, s.users, ownerID, peerUserID, rawUsername)
 	if err != nil {
 		return nil, err
 	}
@@ -96,17 +96,17 @@ func (s *ContactService) Delete(ctx context.Context, ownerID, contactID string) 
 	return nil
 }
 
-func (s *ContactService) LookupByPhone(ctx context.Context, ownerID, rawPhone string) (*model.User, error) {
-	number, err := phone.Normalize(rawPhone)
+func (s *ContactService) LookupByUsername(ctx context.Context, ownerID, rawUsername string) (*model.User, error) {
+	name, err := username.Normalize(rawUsername)
 	if err != nil {
-		return nil, apperr.InvalidPhone()
+		return nil, apperr.InvalidUsername()
 	}
-	peer, err := s.users.FindByPhone(ctx, number)
+	peer, err := s.users.FindByUsername(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
-		return nil, apperr.NotFound("User not found.")
+		return nil, apperr.UserDoesNotExist()
 	}
 	if peer.ID == ownerID {
 		return nil, apperr.Validation("Cannot look up yourself.")
@@ -114,14 +114,14 @@ func (s *ContactService) LookupByPhone(ctx context.Context, ownerID, rawPhone st
 	return peer, nil
 }
 
-func resolvePeer(ctx context.Context, users repository.UserRepository, ownerID, peerUserID, rawPhone string) (*model.User, error) {
+func resolvePeer(ctx context.Context, users repository.UserRepository, ownerID, peerUserID, rawUsername string) (*model.User, error) {
 	peerUserID = strings.TrimSpace(peerUserID)
-	rawPhone = strings.TrimSpace(rawPhone)
-	if peerUserID == "" && rawPhone == "" {
-		return nil, apperr.Validation("user_id or phone is required.")
+	rawUsername = strings.TrimSpace(rawUsername)
+	if peerUserID == "" && rawUsername == "" {
+		return nil, apperr.Validation("user_id or username is required.")
 	}
-	if peerUserID != "" && rawPhone != "" {
-		return nil, apperr.Validation("Provide either user_id or phone, not both.")
+	if peerUserID != "" && rawUsername != "" {
+		return nil, apperr.Validation("Provide either user_id or username, not both.")
 	}
 	if peerUserID != "" {
 		if peerUserID == ownerID {
@@ -132,20 +132,20 @@ func resolvePeer(ctx context.Context, users repository.UserRepository, ownerID, 
 			return nil, err
 		}
 		if peer == nil {
-			return nil, apperr.NotFound("User not found.")
+			return nil, apperr.UserDoesNotExist()
 		}
 		return peer, nil
 	}
-	number, err := phone.Normalize(rawPhone)
+	name, err := username.Normalize(rawUsername)
 	if err != nil {
-		return nil, apperr.InvalidPhone()
+		return nil, apperr.InvalidUsername()
 	}
-	peer, err := users.FindByPhone(ctx, number)
+	peer, err := users.FindByUsername(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
-		return nil, apperr.NotFound("User not found.")
+		return nil, apperr.UserDoesNotExist()
 	}
 	if peer.ID == ownerID {
 		return nil, apperr.Validation("Cannot connect with yourself.")

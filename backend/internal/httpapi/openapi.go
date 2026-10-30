@@ -57,22 +57,12 @@ func openAPI() (*openapi31.Spec, error) {
 		jsonschema.InterceptDefName(func(_ reflect.Type, name string) string {
 			return strings.TrimPrefix(name, "Httpapi")
 		}),
-		jsonschema.InterceptSchema(func(params jsonschema.InterceptSchemaParams) (bool, error) {
-			valueType := params.Value.Type()
-			if valueType.Kind() == reflect.Pointer {
-				valueType = valueType.Elem()
-			}
-			if valueType == reflect.TypeOf(OTPSuccess{}) {
-				params.Schema.Type = nil
-			}
-			return false, nil
-		}),
 	)
 	reflector.Spec.Info.
 		WithTitle("Messenger API").
 		WithVersion("1.0.0").
 		WithDescription("HTTP API for the Messenger app. Protected routes require an access token.")
-	reflector.Spec.SetHTTPBearerTokenSecurity("bearerAuth", "JWT", "Access token from login, verify, or refresh.")
+	reflector.Spec.SetHTTPBearerTokenSecurity("bearerAuth", "JWT", "Access token from login, signup, or refresh.")
 
 	ops := []operation{
 		{
@@ -85,29 +75,28 @@ func openAPI() (*openapi31.Spec, error) {
 			},
 		},
 		{
-			method: http.MethodPost, path: "/auth/otp", id: "requestOtp",
-			summary:     "Request a one-time code",
-			description: "Sends a code when OTP is required. When OTP is disabled, signs in and returns a session instead.",
-			request:     new(OTPRequest),
+			method: http.MethodPost, path: "/auth/login", id: "login",
+			summary:     "Log in with a username",
+			description: "Returns a session when the username exists. Does not create accounts.",
+			request:     new(AuthRequest),
 			bodyOnly:    true,
 			responses: []response{
-				{http.StatusOK, new(OTPSuccess), "A pending code, or a session when OTP is disabled."},
-				failure(http.StatusBadRequest, "The phone number or JSON body is invalid."),
-				failure(http.StatusTooManyRequests, "Too many code requests. retry_after and the Retry-After header say how long to wait."),
-				failure(http.StatusServiceUnavailable, "OTP delivery is not configured."),
+				{http.StatusOK, new(Session), "Session for the existing username."},
+				failure(http.StatusBadRequest, "The username or JSON body is invalid."),
+				failure(http.StatusNotFound, "User does not exist."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
 		},
 		{
-			method: http.MethodPost, path: "/auth/verify", id: "verifyOtp",
-			summary:     "Verify a one-time code",
-			description: "Checks the code, creates the account on first success, and returns a session.",
-			request:     new(VerifyRequest),
+			method: http.MethodPost, path: "/auth/signup", id: "signup",
+			summary:     "Sign up with a username",
+			description: "Creates an account when the username is free and returns a session.",
+			request:     new(AuthRequest),
 			bodyOnly:    true,
 			responses: []response{
-				{http.StatusOK, new(Session), "Session for the verified phone number."},
-				failure(http.StatusBadRequest, "The phone number, code, or JSON body is invalid."),
-				failure(http.StatusUnauthorized, "The code is invalid or expired."),
+				{http.StatusOK, new(Session), "Session for the new username."},
+				failure(http.StatusBadRequest, "The username or JSON body is invalid."),
+				failure(http.StatusConflict, "Username is already taken."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
 		},
@@ -172,15 +161,15 @@ func openAPI() (*openapi31.Spec, error) {
 		},
 		{
 			method: http.MethodGet, path: "/users/lookup", id: "lookupUser",
-			summary:     "Look up a user by phone",
-			description: "Finds a registered user by exact E.164 phone number.",
+			summary:     "Look up a user by username",
+			description: "Finds a registered user by exact username handle.",
 			auth:        true,
 			request:     new(LookupUserQuery),
 			responses: []response{
 				{http.StatusOK, new(Profile), "The matching user profile."},
-				failure(http.StatusBadRequest, "phone is missing or invalid."),
+				failure(http.StatusBadRequest, "username is missing or invalid."),
 				failure(http.StatusUnauthorized, "Missing or invalid access token."),
-				failure(http.StatusNotFound, "No user with that phone number."),
+				failure(http.StatusNotFound, "User does not exist."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
 		},
@@ -198,15 +187,15 @@ func openAPI() (*openapi31.Spec, error) {
 		{
 			method: http.MethodPost, path: "/contacts", id: "addContact",
 			summary:     "Add a contact",
-			description: "Saves a registered peer by user_id or phone. Idempotent for the same peer.",
+			description: "Saves a registered peer by user_id or username. Idempotent for the same peer.",
 			auth:        true,
 			request:     new(AddContact),
 			bodyOnly:    true,
 			responses: []response{
 				{http.StatusCreated, new(Contact), "The saved contact."},
-				failure(http.StatusBadRequest, "The JSON body, user_id, or phone is invalid."),
+				failure(http.StatusBadRequest, "The JSON body, user_id, or username is invalid."),
 				failure(http.StatusUnauthorized, "Missing or invalid access token."),
-				failure(http.StatusNotFound, "The peer user was not found."),
+				failure(http.StatusNotFound, "User does not exist."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
 		},
@@ -226,15 +215,15 @@ func openAPI() (*openapi31.Spec, error) {
 		{
 			method: http.MethodPost, path: "/conversations", id: "openConversation",
 			summary:     "Open or create a DM",
-			description: "Opens an existing 1:1 conversation with the peer, or creates one. Provide user_id or phone.",
+			description: "Opens an existing 1:1 conversation with the peer, or creates one. Provide user_id or username.",
 			auth:        true,
 			request:     new(OpenConversation),
 			bodyOnly:    true,
 			responses: []response{
 				{http.StatusOK, new(Conversation), "The conversation summary."},
-				failure(http.StatusBadRequest, "The JSON body, user_id, or phone is invalid."),
+				failure(http.StatusBadRequest, "The JSON body, user_id, or username is invalid."),
 				failure(http.StatusUnauthorized, "Missing or invalid access token."),
-				failure(http.StatusNotFound, "The peer user was not found."),
+				failure(http.StatusNotFound, "User does not exist."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
 		},

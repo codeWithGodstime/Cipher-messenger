@@ -60,14 +60,11 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	otpRequired, err := boolEnv("OTP_REQUIRED", true)
+	otpRequired, err := boolEnv("OTP_REQUIRED", false)
 	if err != nil {
 		return Config{}, err
 	}
 	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
-	if otpRequired && redisURL == "" {
-		return Config{}, fmt.Errorf("REDIS_URL is required when OTP_REQUIRED is true")
-	}
 
 	cfg := Config{
 		AppEnv:         strings.ToLower(strings.TrimSpace(env("APP_ENV", "development"))),

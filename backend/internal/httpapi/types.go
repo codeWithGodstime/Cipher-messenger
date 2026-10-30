@@ -22,7 +22,7 @@ type Health struct {
 // Profile is the signed-in user returned by auth and profile routes.
 type Profile struct {
 	ID           string    `json:"id" required:"true"`
-	Phone        string    `json:"phone" required:"true" description:"Phone number in E.164 format."`
+	Username     string    `json:"username" required:"true" description:"Unique username handle."`
 	DisplayName  string    `json:"display_name" required:"true"`
 	About        string    `json:"about" required:"true"`
 	ProfilePhoto string    `json:"profile_photo" required:"true"`
@@ -30,13 +30,13 @@ type Profile struct {
 	UpdatedAt    time.Time `json:"updated_at" required:"true"`
 }
 
-// Session is issued by verify and by OTP request when OTP is disabled.
+// Session is issued by login and signup.
 type Session struct {
 	AccessToken  string  `json:"access_token" required:"true"`
 	RefreshToken string  `json:"refresh_token" required:"true"`
 	TokenType    string  `json:"token_type" required:"true" description:"Always Bearer."`
 	ExpiresIn    int     `json:"expires_in" required:"true" description:"Access token lifetime in seconds."`
-	Created      bool    `json:"created" required:"true" description:"True when this login created the account."`
+	Created      bool    `json:"created" required:"true" description:"True when this request created the account."`
 	Profile      Profile `json:"profile" required:"true"`
 }
 
@@ -48,28 +48,9 @@ type TokenPair struct {
 	ExpiresIn    int    `json:"expires_in" required:"true" description:"Access token lifetime in seconds."`
 }
 
-// OTPPending is the body of POST /auth/otp when a code was sent.
-type OTPPending struct {
-	ExpiresIn int `json:"expires_in" required:"true" description:"Seconds until the code expires."`
-}
-
-// OTPSuccess is the 200 body of POST /auth/otp.
-// The wire payload is either OTPPending or Session, never both.
-type OTPSuccess struct{}
-
-func (OTPSuccess) JSONSchemaOneOf() []any {
-	return []any{OTPPending{}, Session{}}
-}
-
-// OTPRequest is the body of POST /auth/otp.
-type OTPRequest struct {
-	Phone string `json:"phone" required:"true" description:"Phone number in E.164 format."`
-}
-
-// VerifyRequest is the body of POST /auth/verify.
-type VerifyRequest struct {
-	Phone string `json:"phone" required:"true" description:"Phone number in E.164 format."`
-	Code  string `json:"code" required:"true" description:"Six-digit one-time code."`
+// AuthRequest is the body of POST /auth/login and POST /auth/signup.
+type AuthRequest struct {
+	Username string `json:"username" required:"true" description:"Unique username handle."`
 }
 
 // RefreshRequest is the body of POST /auth/refresh.
@@ -109,22 +90,22 @@ type ConversationList struct {
 }
 
 // OpenConversation is the body of POST /conversations.
-// Provide either user_id or phone (exactly one).
+// Provide either user_id or username (exactly one).
 type OpenConversation struct {
-	UserID string `json:"user_id,omitempty" description:"Peer user id to open or create a DM with."`
-	Phone  string `json:"phone,omitempty" description:"Peer phone in E.164 format."`
+	UserID   string `json:"user_id,omitempty" description:"Peer user id to open or create a DM with."`
+	Username string `json:"username,omitempty" description:"Peer username handle."`
 }
 
 // AddContact is the body of POST /contacts.
-// Provide either user_id or phone (exactly one).
+// Provide either user_id or username (exactly one).
 type AddContact struct {
-	UserID string `json:"user_id,omitempty" description:"Peer user id to save."`
-	Phone  string `json:"phone,omitempty" description:"Peer phone in E.164 format."`
+	UserID   string `json:"user_id,omitempty" description:"Peer user id to save."`
+	Username string `json:"username,omitempty" description:"Peer username handle."`
 }
 
 // LookupUserQuery is the query for GET /users/lookup.
 type LookupUserQuery struct {
-	Phone string `query:"phone" required:"true" description:"Phone number in E.164 format."`
+	Username string `query:"username" required:"true" description:"Username handle."`
 }
 
 // ContactIDPath is the path for DELETE /contacts/{id}.
@@ -182,7 +163,7 @@ type Error struct {
 func NewProfile(user *model.User) Profile {
 	return Profile{
 		ID:           user.ID,
-		Phone:        user.Phone,
+		Username:     user.Username,
 		DisplayName:  user.DisplayName,
 		About:        user.About,
 		ProfilePhoto: user.ProfilePhoto,

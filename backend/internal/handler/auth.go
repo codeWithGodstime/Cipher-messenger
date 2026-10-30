@@ -19,31 +19,27 @@ func NewAuthHandler(auth *service.AuthService) *AuthHandler {
 	return &AuthHandler{auth: auth}
 }
 
-func (h *AuthHandler) RequestOTP(c *gin.Context) {
-	var req httpapi.OTPRequest
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req httpapi.AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, apperr.InvalidBody())
 		return
 	}
-	result, err := h.auth.RequestOTP(c.Request.Context(), req.Phone)
+	result, err := h.auth.Login(c.Request.Context(), req.Username)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	if result.Login != nil {
-		writeSession(c, result.Login)
-		return
-	}
-	c.JSON(http.StatusOK, httpapi.OTPPending{ExpiresIn: result.ExpiresIn})
+	writeSession(c, result)
 }
 
-func (h *AuthHandler) Verify(c *gin.Context) {
-	var req httpapi.VerifyRequest
+func (h *AuthHandler) Signup(c *gin.Context) {
+	var req httpapi.AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, apperr.InvalidBody())
 		return
 	}
-	result, err := h.auth.Verify(c.Request.Context(), req.Phone, req.Code)
+	result, err := h.auth.Signup(c.Request.Context(), req.Username)
 	if err != nil {
 		writeError(c, err)
 		return

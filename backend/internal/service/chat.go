@@ -103,8 +103,8 @@ func (s *ChatService) ListConversations(ctx context.Context, userID string) ([]C
 	return out, nil
 }
 
-func (s *ChatService) OpenDM(ctx context.Context, userID, peerUserID, rawPhone string) (*ConversationSummary, error) {
-	peer, err := resolvePeer(ctx, s.users, userID, peerUserID, rawPhone)
+func (s *ChatService) OpenDM(ctx context.Context, userID, peerUserID, rawUsername string) (*ConversationSummary, error) {
+	peer, err := resolvePeer(ctx, s.users, userID, peerUserID, rawUsername)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ import com.example.messenger.data.api.TokenPair
 
 /**
  * Survives process death so a signed-in user lands on chats on the next launch.
- * Tokens stay in private app prefs until a real logout path clears them.
+ * Tokens stay in private app prefs until logout (or a failed refresh) clears them.
  */
 class SessionStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

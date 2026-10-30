@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
+import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatCall
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 class ChatViewModel(
     private val sessionStore: SessionStore,
     private val tokens: TokenRefresher,
+    private val authRepository: AuthRepository,
     private val repository: ChatRepository,
     private val socket: MessengerSocket,
 ) : ViewModel() {
@@ -44,6 +46,8 @@ class ChatViewModel(
     var notice by mutableStateOf<String?>(null)
         private set
     var activeConversationId by mutableStateOf<String?>(null)
+        private set
+    var loggingOut by mutableStateOf(false)
         private set
 
     private var userId: String = sessionStore.userId.orEmpty()
@@ -93,6 +97,19 @@ class ChatViewModel(
 
     fun consumeListError() {
         listError = null
+    }
+
+    fun logout() {
+        if (loggingOut) return
+        viewModelScope.launch {
+            loggingOut = true
+            val token = sessionStore.accessToken
+            if (!token.isNullOrBlank()) {
+                authRepository.logout(token)
+            }
+            socket.stop()
+            tokens.signOut()
+        }
     }
 
     fun refreshConversations() {
@@ -366,6 +383,7 @@ class ChatViewModelFactory(
             return ChatViewModel(
                 sessionStore = sessionStore,
                 tokens = bound.tokenRefresher,
+                authRepository = ApiClient.repository,
                 repository = bound.chatRepository,
                 socket = ApiClient.messengerSocket(sessionStore),
             ) as T

@@ -55,6 +55,17 @@ class AuthRepository(
             }
         }
 
+    /** Best-effort server revoke; callers still clear the local session afterward. */
+    suspend fun logout(accessToken: String) {
+        try {
+            api.logout(authorization = "Bearer $accessToken")
+        } catch (_: IOException) {
+            // Local sign-out still proceeds.
+        } catch (_: SerializationException) {
+            // Local sign-out still proceeds.
+        }
+    }
+
     private suspend fun <T> call(failed: (String) -> T, block: suspend () -> T): T {
         return try {
             block()

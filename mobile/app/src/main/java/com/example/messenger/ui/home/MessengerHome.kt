@@ -204,6 +204,8 @@ fun MessengerHome(
                     displayName = displayName,
                     usernameLabel = usernameLabel,
                     onNotice = ::notice,
+                    onSignOut = viewModel::logout,
+                    signingOut = viewModel.loggingOut,
                 )
             }
         }

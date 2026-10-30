@@ -83,6 +83,13 @@ class TokenRefresher(
         loopJob = null
     }
 
+    /** Clears tokens and notifies the UI to return to auth. */
+    fun signOut() {
+        stop()
+        sessionStore.clear()
+        emitSessionLost()
+    }
+
     private fun waitBeforeRefreshMs(): Long {
         val expiresAt = sessionStore.accessExpiresAtMillis
         if (expiresAt <= 0L || sessionStore.isAccessExpiringSoon()) {

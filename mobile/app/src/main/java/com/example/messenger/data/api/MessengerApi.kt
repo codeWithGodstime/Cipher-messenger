@@ -21,6 +21,11 @@ interface MessengerApi {
     @POST("auth/refresh")
     suspend fun refresh(@Body body: RefreshRequest): Response<ResponseBody>
 
+    @POST("auth/logout")
+    suspend fun logout(
+        @Header("Authorization") authorization: String,
+    ): Response<ResponseBody>
+
     @GET("me")
     suspend fun getProfile(
         @Header("Authorization") authorization: String,

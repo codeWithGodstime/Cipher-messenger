@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Help
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.messenger.BuildConfig
@@ -60,6 +61,8 @@ fun SettingsScreen(
     displayName: String,
     usernameLabel: String,
     onNotice: (String) -> Unit,
+    onSignOut: () -> Unit,
+    signingOut: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
@@ -146,6 +149,10 @@ fun SettingsScreen(
                     onNotice("${entry.title} is not connected in this build.")
                 })
             }
+            SignOutRow(
+                busy = signingOut,
+                onClick = onSignOut,
+            )
         }
         Column(
             modifier = Modifier
@@ -335,6 +342,64 @@ private fun SettingsRow(
     }
 }
 
+@Composable
+private fun SignOutRow(
+    busy: Boolean,
+    onClick: () -> Unit,
+) {
+    val spacing = CipherTheme.spacing
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = !busy,
+        shape = MaterialTheme.shapes.medium,
+        color = scheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(scheme.error.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = scheme.error,
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Logout,
+                        contentDescription = null,
+                        tint = scheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (busy) "Signing out…" else "Sign out",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = scheme.error,
+                )
+                Text(
+                    text = "End this session on this device",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true, widthDp = 390, heightDp = 884)
 @Composable
 private fun SettingsPreview() {
@@ -343,6 +408,7 @@ private fun SettingsPreview() {
             displayName = "Alex Vance",
             usernameLabel = "alex",
             onNotice = {},
+            onSignOut = {},
         )
     }
 }

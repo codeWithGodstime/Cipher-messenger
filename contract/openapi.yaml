@@ -5,6 +5,44 @@ info:
   title: Messenger API
   version: 1.0.0
 paths:
+  /auth/login:
+    post:
+      description: Returns a session when the username exists. Does not create accounts.
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          description: Session for the existing username.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The username or JSON body is invalid.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: User does not exist.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      summary: Log in with a username
+      tags:
+      - Messenger
   /auth/logout:
     post:
       description: Revokes the session carried by the access token.
@@ -27,52 +65,6 @@ paths:
       security:
       - bearerAuth: []
       summary: Log out
-      tags:
-      - Messenger
-  /auth/otp:
-    post:
-      description: Sends a code when OTP is required. When OTP is disabled, signs
-        in and returns a session instead.
-      operationId: requestOtp
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OTPRequest'
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OTPSuccess'
-          description: A pending code, or a session when OTP is disabled.
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: The phone number or JSON body is invalid.
-        "429":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Too many code requests. retry_after and the Retry-After header
-            say how long to wait.
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Unexpected failure.
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: OTP delivery is not configured.
-      summary: Request a one-time code
       tags:
       - Messenger
   /auth/refresh:
@@ -114,16 +106,15 @@ paths:
       summary: Refresh a session
       tags:
       - Messenger
-  /auth/verify:
+  /auth/signup:
     post:
-      description: Checks the code, creates the account on first success, and returns
-        a session.
-      operationId: verifyOtp
+      description: Creates an account when the username is free and returns a session.
+      operationId: signup
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/VerifyRequest'
+              $ref: '#/components/schemas/AuthRequest'
         required: true
       responses:
         "200":
@@ -131,26 +122,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Session'
-          description: Session for the verified phone number.
+          description: Session for the new username.
         "400":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The phone number, code, or JSON body is invalid.
-        "401":
+          description: The username or JSON body is invalid.
+        "409":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The code is invalid or expired.
+          description: Username is already taken.
         "500":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Unexpected failure.
-      summary: Verify a one-time code
+      summary: Sign up with a username
       tags:
       - Messenger
   /contacts:
@@ -182,8 +173,8 @@ paths:
       tags:
       - Messenger
     post:
-      description: Saves a registered peer by user_id or phone. Idempotent for the
-        same peer.
+      description: Saves a registered peer by user_id or username. Idempotent for
+        the same peer.
       operationId: addContact
       requestBody:
         content:
@@ -203,7 +194,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The JSON body, user_id, or phone is invalid.
+          description: The JSON body, user_id, or username is invalid.
         "401":
           content:
             application/json:
@@ -215,7 +206,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The peer user was not found.
+          description: User does not exist.
         "500":
           content:
             application/json:
@@ -295,7 +286,7 @@ paths:
       - Messenger
     post:
       description: Opens an existing 1:1 conversation with the peer, or creates one.
-        Provide user_id or phone.
+        Provide user_id or username.
       operationId: openConversation
       requestBody:
         content:
@@ -315,7 +306,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The JSON body, user_id, or phone is invalid.
+          description: The JSON body, user_id, or username is invalid.
         "401":
           content:
             application/json:
@@ -327,7 +318,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The peer user was not found.
+          description: User does not exist.
         "500":
           content:
             application/json:
@@ -553,15 +544,15 @@ paths:
       - Messenger
   /users/lookup:
     get:
-      description: Finds a registered user by exact E.164 phone number.
+      description: Finds a registered user by exact username handle.
       operationId: lookupUser
       parameters:
-      - description: Phone number in E.164 format.
+      - description: Username handle.
         in: query
-        name: phone
+        name: username
         required: true
         schema:
-          description: Phone number in E.164 format.
+          description: Username handle.
           type: string
       responses:
         "200":
@@ -575,7 +566,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: phone is missing or invalid.
+          description: username is missing or invalid.
         "401":
           content:
             application/json:
@@ -587,7 +578,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: No user with that phone number.
+          description: User does not exist.
         "500":
           content:
             application/json:
@@ -596,7 +587,7 @@ paths:
           description: Unexpected failure.
       security:
       - bearerAuth: []
-      summary: Look up a user by phone
+      summary: Look up a user by username
       tags:
       - Messenger
   /ws:
@@ -631,12 +622,20 @@ components:
   schemas:
     AddContact:
       properties:
-        phone:
-          description: Peer phone in E.164 format.
-          type: string
         user_id:
           description: Peer user id to save.
           type: string
+        username:
+          description: Peer username handle.
+          type: string
+      type: object
+    AuthRequest:
+      properties:
+        username:
+          description: Unique username handle.
+          type: string
+      required:
+      - username
       type: object
     Contact:
       properties:
@@ -752,33 +751,13 @@ components:
       required:
       - messages
       type: object
-    OTPPending:
-      properties:
-        expires_in:
-          description: Seconds until the code expires.
-          type: integer
-      required:
-      - expires_in
-      type: object
-    OTPRequest:
-      properties:
-        phone:
-          description: Phone number in E.164 format.
-          type: string
-      required:
-      - phone
-      type: object
-    OTPSuccess:
-      oneOf:
-      - $ref: '#/components/schemas/OTPPending'
-      - $ref: '#/components/schemas/Session'
     OpenConversation:
       properties:
-        phone:
-          description: Peer phone in E.164 format.
-          type: string
         user_id:
           description: Peer user id to open or create a DM with.
+          type: string
+        username:
+          description: Peer username handle.
           type: string
       type: object
     Profile:
@@ -792,17 +771,17 @@ components:
           type: string
         id:
           type: string
-        phone:
-          description: Phone number in E.164 format.
-          type: string
         profile_photo:
           type: string
         updated_at:
           format: date-time
           type: string
+        username:
+          description: Unique username handle.
+          type: string
       required:
       - id
-      - phone
+      - username
       - display_name
       - about
       - profile_photo
@@ -847,7 +826,7 @@ components:
         access_token:
           type: string
         created:
-          description: True when this login created the account.
+          description: True when this request created the account.
           type: boolean
         expires_in:
           description: Access token lifetime in seconds.
@@ -885,18 +864,6 @@ components:
       - token_type
       - expires_in
       type: object
-    VerifyRequest:
-      properties:
-        code:
-          description: Six-digit one-time code.
-          type: string
-        phone:
-          description: Phone number in E.164 format.
-          type: string
-      required:
-      - phone
-      - code
-      type: object
     WSInfo:
       properties:
         protocol:
@@ -909,6 +876,6 @@ components:
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT
-      description: Access token from login, verify, or refresh.
+      description: Access token from login, signup, or refresh.
       scheme: bearer
       type: http

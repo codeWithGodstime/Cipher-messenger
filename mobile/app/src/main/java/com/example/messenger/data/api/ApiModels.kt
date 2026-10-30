@@ -4,10 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class OtpRequest(val phone: String)
-
-@Serializable
-data class VerifyRequest(val phone: String, val code: String)
+data class AuthRequest(val username: String)
 
 @Serializable
 data class ProfileUpdateRequest(
@@ -22,14 +19,9 @@ data class ApiErrorBody(
 )
 
 @Serializable
-data class OtpPending(
-    @SerialName("expires_in") val expiresIn: Int,
-)
-
-@Serializable
 data class Profile(
     val id: String,
-    val phone: String,
+    val username: String,
     @SerialName("display_name") val displayName: String,
     val about: String = "",
     @SerialName("profile_photo") val profilePhoto: String = "",
@@ -87,13 +79,13 @@ data class ConversationList(
 @Serializable
 data class OpenConversationRequest(
     @SerialName("user_id") val userId: String? = null,
-    val phone: String? = null,
+    val username: String? = null,
 )
 
 @Serializable
 data class AddContactRequest(
     @SerialName("user_id") val userId: String? = null,
-    val phone: String? = null,
+    val username: String? = null,
 )
 
 @Serializable

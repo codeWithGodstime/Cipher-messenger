@@ -12,11 +12,11 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface MessengerApi {
-    @POST("auth/otp")
-    suspend fun requestOtp(@Body body: OtpRequest): Response<ResponseBody>
+    @POST("auth/login")
+    suspend fun login(@Body body: AuthRequest): Response<ResponseBody>
 
-    @POST("auth/verify")
-    suspend fun verify(@Body body: VerifyRequest): Response<ResponseBody>
+    @POST("auth/signup")
+    suspend fun signup(@Body body: AuthRequest): Response<ResponseBody>
 
     @POST("auth/refresh")
     suspend fun refresh(@Body body: RefreshRequest): Response<ResponseBody>
@@ -35,7 +35,7 @@ interface MessengerApi {
     @GET("users/lookup")
     suspend fun lookupUser(
         @Header("Authorization") authorization: String,
-        @Query("phone") phone: String,
+        @Query("username") username: String,
     ): Response<ResponseBody>
 
     @GET("contacts")

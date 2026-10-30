@@ -1,9 +1,8 @@
 package com.example.messenger
 
+import com.example.messenger.data.api.Session
 import com.example.messenger.data.api.TokenPair
-import com.example.messenger.data.auth.OtpCall
 import com.example.messenger.data.auth.errorMessage
-import com.example.messenger.data.auth.parseOtpSuccess
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -12,15 +11,9 @@ class AuthResponseTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun otpPendingBodyIsACodeSent() {
-        val result = parseOtpSuccess(json, """{"expires_in":300}""")
-        assertEquals(OtpCall.CodeSent(300), result)
-    }
-
-    @Test
-    fun otpSessionBodySignsIn() {
-        val result = parseOtpSuccess(
-            json,
+    fun sessionBodyParsesUsernameProfile() {
+        val session = json.decodeFromString(
+            Session.serializer(),
             """
             {
               "access_token": "access",
@@ -30,7 +23,7 @@ class AuthResponseTest {
               "created": true,
               "profile": {
                 "id": "user-1",
-                "phone": "+2348012345678",
+                "username": "alex",
                 "display_name": "",
                 "about": "",
                 "profile_photo": "",
@@ -40,9 +33,8 @@ class AuthResponseTest {
             }
             """.trimIndent(),
         )
-        val session = (result as OtpCall.SignedIn).session
         assertEquals("access", session.accessToken)
-        assertEquals("+2348012345678", session.profile.phone)
+        assertEquals("alex", session.profile.username)
         assertEquals(true, session.created)
     }
 
@@ -54,6 +46,16 @@ class AuthResponseTest {
             """{"error":"rate_limited","message":"Too many code requests. Try again later.","retry_after":30}""",
         )
         assertEquals("Too many code requests. Try again later. Try again in 30s.", message)
+    }
+
+    @Test
+    fun missingUserUsesServerMessage() {
+        val message = errorMessage(
+            json,
+            404,
+            """{"error":"user_not_found","message":"User does not exist."}""",
+        )
+        assertEquals("User does not exist.", message)
     }
 
     @Test

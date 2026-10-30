@@ -1,27 +1,18 @@
 package com.example.messenger.data.auth
 
 import com.example.messenger.data.api.ApiErrorBody
+import com.example.messenger.data.api.AuthRequest
 import com.example.messenger.data.api.MessengerApi
-import com.example.messenger.data.api.OtpPending
-import com.example.messenger.data.api.OtpRequest
 import com.example.messenger.data.api.Profile
 import com.example.messenger.data.api.ProfileUpdateRequest
 import com.example.messenger.data.api.Session
-import com.example.messenger.data.api.VerifyRequest
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import java.io.IOException
 
-sealed interface OtpCall {
-    data class CodeSent(val expiresInSeconds: Int) : OtpCall
-    data class SignedIn(val session: Session) : OtpCall
-    data class Failed(val message: String) : OtpCall
-}
-
-sealed interface VerifyCall {
-    data class Success(val session: Session) : VerifyCall
-    data class Failed(val message: String) : VerifyCall
+sealed interface AuthCall {
+    data class Success(val session: Session) : AuthCall
+    data class Failed(val message: String) : AuthCall
 }
 
 sealed interface ProfileCall {
@@ -33,21 +24,21 @@ class AuthRepository(
     private val api: MessengerApi,
     private val json: Json,
 ) {
-    suspend fun requestOtp(phone: String): OtpCall = call(::otpFailed) {
-        val response = api.requestOtp(OtpRequest(phone))
+    suspend fun login(username: String): AuthCall = call(::authFailed) {
+        val response = api.login(AuthRequest(username))
         if (!response.isSuccessful) {
-            OtpCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+            AuthCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
         } else {
-            parseOtpSuccess(json, response.body()?.string().orEmpty())
+            AuthCall.Success(json.decodeFromString(response.body()?.string().orEmpty()))
         }
     }
 
-    suspend fun verify(phone: String, code: String): VerifyCall = call(::verifyFailed) {
-        val response = api.verify(VerifyRequest(phone, code))
+    suspend fun signup(username: String): AuthCall = call(::authFailed) {
+        val response = api.signup(AuthRequest(username))
         if (!response.isSuccessful) {
-            VerifyCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+            AuthCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
         } else {
-            VerifyCall.Success(json.decodeFromString(response.body()?.string().orEmpty()))
+            AuthCall.Success(json.decodeFromString(response.body()?.string().orEmpty()))
         }
     }
 
@@ -75,20 +66,9 @@ class AuthRepository(
     }
 }
 
-private fun otpFailed(message: String) = OtpCall.Failed(message)
-
-private fun verifyFailed(message: String) = VerifyCall.Failed(message)
+private fun authFailed(message: String) = AuthCall.Failed(message)
 
 private fun profileFailed(message: String) = ProfileCall.Failed(message)
-
-internal fun parseOtpSuccess(json: Json, body: String): OtpCall {
-    val payload = json.parseToJsonElement(body).jsonObject
-    return if ("access_token" in payload) {
-        OtpCall.SignedIn(json.decodeFromJsonElement(Session.serializer(), payload))
-    } else {
-        OtpCall.CodeSent(json.decodeFromJsonElement(OtpPending.serializer(), payload).expiresIn)
-    }
-}
 
 internal fun errorMessage(json: Json, code: Int, raw: String?): String {
     val parsed = raw?.let { runCatching { json.decodeFromString<ApiErrorBody>(it) }.getOrNull() }
@@ -100,10 +80,9 @@ internal fun errorMessage(json: Json, code: Int, raw: String?): String {
         }
     }
     return when (code) {
-        400 -> "Check the phone number and try again."
-        401 -> "That code is invalid or expired."
-        429 -> "Too many code requests. Try again later."
-        503 -> "Code delivery is not available."
+        400 -> "Check the username and try again."
+        404 -> "User does not exist."
+        409 -> "Username is already taken."
         else -> "Something went wrong."
     }
 }

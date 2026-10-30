@@ -33,8 +33,9 @@ class SessionStore(context: Context) {
     val displayName: String
         get() = prefs.getString(KEY_DISPLAY_NAME, "").orEmpty()
 
-    val phoneLabel: String
-        get() = prefs.getString(KEY_PHONE_LABEL, "").orEmpty()
+    val usernameLabel: String
+        get() = prefs.getString(KEY_USERNAME_LABEL, "").orEmpty()
+            .ifBlank { prefs.getString(KEY_PHONE_LABEL, "").orEmpty() }
 
     fun rememberSession(session: Session) {
         prefs.edit()
@@ -43,7 +44,7 @@ class SessionStore(context: Context) {
             .putLong(KEY_ACCESS_EXPIRES_AT, expiresAtFrom(session.expiresIn))
             .putString(KEY_USER_ID, session.profile.id)
             .putString(KEY_DISPLAY_NAME, session.profile.displayName)
-            .putString(KEY_PHONE_LABEL, session.profile.phone)
+            .putString(KEY_USERNAME_LABEL, session.profile.username)
             .apply()
     }
 
@@ -59,7 +60,7 @@ class SessionStore(context: Context) {
         prefs.edit()
             .putString(KEY_USER_ID, profile.id)
             .putString(KEY_DISPLAY_NAME, profile.displayName)
-            .putString(KEY_PHONE_LABEL, profile.phone)
+            .putString(KEY_USERNAME_LABEL, profile.username)
             .apply()
     }
 
@@ -67,11 +68,11 @@ class SessionStore(context: Context) {
         prefs.edit().putString(KEY_DISPLAY_NAME, displayName).apply()
     }
 
-    fun markLoggedIn(displayName: String, phoneLabel: String) {
+    fun markLoggedIn(displayName: String, usernameLabel: String) {
         prefs.edit()
             .putBoolean(KEY_LOGGED_IN, true)
             .putString(KEY_DISPLAY_NAME, displayName)
-            .putString(KEY_PHONE_LABEL, phoneLabel)
+            .putString(KEY_USERNAME_LABEL, usernameLabel)
             .apply()
     }
 
@@ -100,6 +101,7 @@ class SessionStore(context: Context) {
         const val KEY_ACCESS_EXPIRES_AT = "access_expires_at"
         const val KEY_USER_ID = "user_id"
         const val KEY_DISPLAY_NAME = "display_name"
+        const val KEY_USERNAME_LABEL = "username_label"
         const val KEY_PHONE_LABEL = "phone_label"
         const val DEFAULT_SKEW_MS = 60_000L
     }

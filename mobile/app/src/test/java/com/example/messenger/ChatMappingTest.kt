@@ -26,7 +26,7 @@ class ChatMappingTest {
             id = "c1",
             peer = Profile(
                 id = "u2",
-                phone = "+14155550100",
+                username = "elena",
                 displayName = "Elena",
                 createdAt = "2026-01-01T00:00:00Z",
                 updatedAt = "2026-01-01T00:00:00Z",
@@ -100,12 +100,12 @@ class ChatMappingTest {
     }
 
     @Test
-    fun contactMapsPeerNameAndPhone() {
+    fun contactMapsPeerNameAndUsername() {
         val contact = ApiContact(
             id = "ct1",
             peer = Profile(
                 id = "u2",
-                phone = "+2348012345678",
+                username = "ada",
                 displayName = "Ada",
                 createdAt = "2026-01-01T00:00:00Z",
                 updatedAt = "2026-01-01T00:00:00Z",
@@ -116,24 +116,24 @@ class ChatMappingTest {
         assertEquals("u2", entry.id)
         assertEquals("ct1", entry.contactId)
         assertEquals("Ada", entry.name)
-        assertEquals("+2348012345678", entry.detail)
+        assertEquals("@ada", entry.detail)
     }
 
     @Test
     fun openConversationRequestOmitsNullPeerFields() {
-        val byPhone = json.encodeToString(
+        val byUsername = json.encodeToString(
             OpenConversationRequest.serializer(),
-            OpenConversationRequest(phone = "+2348012345678"),
+            OpenConversationRequest(username = "ada"),
         )
-        assertTrue(byPhone.contains("\"phone\":\"+2348012345678\""))
-        assertFalse(byPhone.contains("user_id"))
+        assertTrue(byUsername.contains("\"username\":\"ada\""))
+        assertFalse(byUsername.contains("user_id"))
 
         val byId = json.encodeToString(
             OpenConversationRequest.serializer(),
             OpenConversationRequest(userId = "u2"),
         )
         assertTrue(byId.contains("\"user_id\":\"u2\""))
-        assertFalse(byId.contains("phone"))
+        assertFalse(byId.contains("username"))
         assertNull(OpenConversationRequest().userId)
     }
 }

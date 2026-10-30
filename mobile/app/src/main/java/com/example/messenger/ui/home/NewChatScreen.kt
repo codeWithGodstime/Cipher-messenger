@@ -55,7 +55,7 @@ fun NewChatScreen(
     recentPeers: List<ContactEntry>,
     onBack: () -> Unit,
     onOpenPeer: (peerUserId: String) -> Unit,
-    onOpenPhone: (phoneE164: String) -> Unit,
+    onOpenUsername: (username: String) -> Unit,
     onNewContact: () -> Unit,
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -66,20 +66,18 @@ fun NewChatScreen(
     val visibleContacts = contacts.filter { it.matches(query) }
     val visiblePeers = recentPeers.filter { it.matches(query) }
     val trimmedQuery = query.trim()
-    val compactPhone = trimmedQuery.filter { !it.isWhitespace() }
-    val isE164 = compactPhone.startsWith("+") &&
-        compactPhone.drop(1).all { it.isDigit() } &&
-        compactPhone.length in 8..16
-    val looksLikePhone = isE164 ||
-        (trimmedQuery.isNotEmpty() && trimmedQuery.all { it.isDigit() || it.isWhitespace() })
+    val compactUsername = trimmedQuery.removePrefix("@").lowercase().filter { !it.isWhitespace() }
+    val looksLikeUsername = compactUsername.length >= 3 &&
+        compactUsername.first().isLetter() &&
+        compactUsername.all { it.isLetterOrDigit() || it == '_' }
     val canStartById = trimmedQuery.isNotEmpty() &&
-        !looksLikePhone &&
+        !looksLikeUsername &&
         visibleContacts.none { it.id.equals(trimmedQuery, ignoreCase = true) } &&
         visiblePeers.none { it.id.equals(trimmedQuery, ignoreCase = true) }
-    val canStartByPhone = trimmedQuery.isNotEmpty() && looksLikePhone
+    val canStartByUsername = trimmedQuery.isNotEmpty() && looksLikeUsername
     val contactCount = contacts.size
     val subtitle = when {
-        contactCount == 0 && recentPeers.isEmpty() -> "Add a contact or start with a phone number"
+        contactCount == 0 && recentPeers.isEmpty() -> "Add a contact or start with a username"
         contactCount == 0 -> "${recentPeers.size} recent peers"
         else -> "$contactCount contacts"
     }
@@ -154,7 +152,7 @@ fun NewChatScreen(
                         iconBackground = MaterialTheme.colorScheme.secondaryContainer,
                         iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
                         title = "New contact",
-                        subtitle = "Add by phone number",
+                        subtitle = "Add by username",
                         onClick = onNewContact,
                     )
                     ActionCard(
@@ -171,7 +169,7 @@ fun NewChatScreen(
                 CipherSearchField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = "Search contacts, phone, or user id",
+                    placeholder = "Search contacts or username",
                     focusRequester = searchFocus,
                     container = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
@@ -191,17 +189,15 @@ fun NewChatScreen(
                     )
                 }
             }
-            if (canStartByPhone) {
-                item(key = "start-by-phone") {
+            if (canStartByUsername) {
+                item(key = "start-by-username") {
                     ActionCard(
                         icon = Icons.Filled.Dialpad,
                         iconBackground = MaterialTheme.colorScheme.secondaryContainer,
                         iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        title = if (isE164) "Chat by phone" else "Enter full phone",
-                        subtitle = if (isE164) compactPhone else "Open new contact to pick country code",
-                        onClick = {
-                            if (isE164) onOpenPhone(compactPhone) else onNewContact()
-                        },
+                        title = "Chat by username",
+                        subtitle = "@$compactUsername",
+                        onClick = { onOpenUsername(compactUsername) },
                     )
                 }
             }
@@ -362,7 +358,7 @@ private fun DialBanner(
                     color = scheme.onSurface,
                 )
                 Text(
-                    text = "Connect via Cipher ID or phone",
+                    text = "Connect via Cipher ID or username",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )
@@ -494,7 +490,7 @@ private fun NewChatPreview() {
             recentPeers = CipherSamples.directory,
             onBack = {},
             onOpenPeer = {},
-            onOpenPhone = {},
+            onOpenUsername = {},
             onNewContact = {},
             onNotice = {},
         )

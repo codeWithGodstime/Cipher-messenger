@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -14,7 +16,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,11 +26,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
-import com.example.messenger.ui.auth.Countries
-import com.example.messenger.ui.auth.formatNational
 import com.example.messenger.ui.components.CipherPrimaryButton
-import com.example.messenger.ui.components.NumericKeypad
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
 
@@ -36,15 +37,13 @@ import com.example.messenger.ui.theme.MessengerTheme
 fun NewContactScreen(
     busy: Boolean,
     onBack: () -> Unit,
-    onSave: (phoneE164: String) -> Unit,
-    onSaveAndChat: (phoneE164: String) -> Unit,
+    onSave: (username: String) -> Unit,
+    onSaveAndChat: (username: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
-    var digits by rememberSaveable { mutableStateOf("") }
-    val country = Countries.first()
-    val complete = digits.length == country.digitCount
-    val e164 = country.dialCode + digits.filter { it.isDigit() }
+    var username by rememberSaveable { mutableStateOf("") }
+    val ready = username.trim().length >= 3 && !busy
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -68,7 +67,7 @@ fun NewContactScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Find someone already on Cipher by phone",
+                    text = "Find someone already on Cipher by username",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -82,41 +81,39 @@ fun NewContactScreen(
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             Text(
-                text = "Phone number",
+                text = "Username",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
-                ) {
+            OutlinedTextField(
+                value = username,
+                onValueChange = { next ->
+                    username = next.lowercase()
+                        .removePrefix("@")
+                        .filter { it.isLetterOrDigit() || it == '_' }
+                        .take(32)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                prefix = {
                     Text(
-                        text = "${country.flag} ${country.dialCode}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = "@",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        text = formatNational(digits, country).ifEmpty { "Enter number" },
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (digits.isEmpty()) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Ascii,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (ready) onSaveAndChat(username) },
+                ),
+            )
             Text(
-                text = "They must already have a Cipher account with this number.",
+                text = "They must already have a Cipher account with this username.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -129,30 +126,17 @@ fun NewContactScreen(
         ) {
             CipherPrimaryButton(
                 text = if (busy) "Connecting…" else "Save & chat",
-                onClick = { onSaveAndChat(e164) },
-                enabled = complete && !busy,
+                onClick = { onSaveAndChat(username) },
+                enabled = ready,
                 icon = Icons.AutoMirrored.Filled.Chat,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             )
             CipherPrimaryButton(
                 text = "Save contact only",
-                onClick = { onSave(e164) },
-                enabled = complete && !busy,
+                onClick = { onSave(username) },
+                enabled = ready,
                 icon = Icons.Filled.PersonAdd,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            )
-            NumericKeypad(
-                onDigit = { digit ->
-                    if (digits.length < country.digitCount) {
-                        digits += digit
-                    }
-                },
-                onBackspace = {
-                    if (digits.isNotEmpty()) {
-                        digits = digits.dropLast(1)
-                    }
-                },
-                modifier = Modifier.padding(top = spacing.xs),
             )
         }
     }

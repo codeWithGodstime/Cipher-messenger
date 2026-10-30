@@ -189,27 +189,27 @@ class ChatViewModel(
             onOpened(existing.id)
             return
         }
-        openConversation(peerUserId = peer, phone = null, onOpened = onOpened)
+        openConversation(peerUserId = peer, username = null, onOpened = onOpened)
     }
 
-    fun startChatWithPhone(phoneE164: String, onOpened: (String) -> Unit) {
-        val phone = phoneE164.trim()
-        if (phone.isEmpty()) {
-            notice = "Enter a phone number to start a chat."
+    fun startChatWithUsername(rawUsername: String, onOpened: (String) -> Unit) {
+        val username = rawUsername.trim().lowercase().removePrefix("@")
+        if (username.isEmpty()) {
+            notice = "Enter a username to start a chat."
             return
         }
-        openConversation(peerUserId = null, phone = phone, onOpened = onOpened)
+        openConversation(peerUserId = null, username = username, onOpened = onOpened)
     }
 
-    fun addContactByPhone(
-        phoneE164: String,
+    fun addContactByUsername(
+        rawUsername: String,
         startChat: Boolean,
         onOpened: (String) -> Unit,
         onSaved: (() -> Unit)? = null,
     ) {
-        val phone = phoneE164.trim()
-        if (phone.isEmpty()) {
-            notice = "Enter a phone number to add a contact."
+        val username = rawUsername.trim().lowercase().removePrefix("@")
+        if (username.isEmpty()) {
+            notice = "Enter a username to add a contact."
             return
         }
         if (connectBusy) return
@@ -219,13 +219,13 @@ class ChatViewModel(
                 return@launch
             }
             connectBusy = true
-            when (val result = repository.addContact(token, phone = phone)) {
+            when (val result = repository.addContact(token, username = username)) {
                 is ChatCall.Ok -> {
                     val entry = result.value.asContactEntry()
                     savedContacts = listOf(entry) + savedContacts.filterNot { it.id == entry.id }
                     connectBusy = false
                     if (startChat) {
-                        openConversation(peerUserId = entry.id, phone = null, onOpened = onOpened)
+                        openConversation(peerUserId = entry.id, username = null, onOpened = onOpened)
                     } else {
                         notice = "Added ${entry.name}."
                         onSaved?.invoke()
@@ -256,7 +256,7 @@ class ChatViewModel(
 
     private fun openConversation(
         peerUserId: String?,
-        phone: String?,
+        username: String?,
         onOpened: (String) -> Unit,
     ) {
         if (connectBusy) return
@@ -266,7 +266,7 @@ class ChatViewModel(
                 return@launch
             }
             connectBusy = true
-            when (val result = repository.openConversation(token, peerUserId = peerUserId, phone = phone)) {
+            when (val result = repository.openConversation(token, peerUserId = peerUserId, username = username)) {
                 is ChatCall.Ok -> {
                     upsertConversation(result.value)
                     connectBusy = false

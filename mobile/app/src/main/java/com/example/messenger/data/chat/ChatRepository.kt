@@ -57,11 +57,11 @@ class ChatRepository(
     suspend fun addContact(
         accessToken: String,
         peerUserId: String? = null,
-        phone: String? = null,
+        username: String? = null,
     ): ChatCall<ApiContact> = call {
         val response = api.addContact(
             authorization = bearer(accessToken),
-            body = AddContactRequest(userId = peerUserId, phone = phone),
+            body = AddContactRequest(userId = peerUserId, username = username),
         )
         if (!response.isSuccessful) {
             ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
@@ -79,8 +79,8 @@ class ChatRepository(
         }
     }
 
-    suspend fun lookupUser(accessToken: String, phone: String): ChatCall<Profile> = call {
-        val response = api.lookupUser(bearer(accessToken), phone)
+    suspend fun lookupUser(accessToken: String, username: String): ChatCall<Profile> = call {
+        val response = api.lookupUser(bearer(accessToken), username)
         if (!response.isSuccessful) {
             ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
         } else {
@@ -91,12 +91,12 @@ class ChatRepository(
     suspend fun openConversation(
         accessToken: String,
         peerUserId: String? = null,
-        phone: String? = null,
+        username: String? = null,
     ): ChatCall<ApiConversation> =
         call {
             val response = api.openConversation(
                 authorization = bearer(accessToken),
-                body = OpenConversationRequest(userId = peerUserId, phone = phone),
+                body = OpenConversationRequest(userId = peerUserId, username = username),
             )
             if (!response.isSuccessful) {
                 ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))

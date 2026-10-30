@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
 fun MessengerHome(
     sessionStore: SessionStore,
     displayName: String,
-    phoneLabel: String,
+    usernameLabel: String,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: ChatViewModel = viewModel(
@@ -140,8 +140,8 @@ fun MessengerHome(
                             openChat(conversationId)
                         }
                     },
-                    onOpenPhone = { phone ->
-                        viewModel.startChatWithPhone(phone) { conversationId ->
+                    onOpenUsername = { username ->
+                        viewModel.startChatWithUsername(username) { conversationId ->
                             openChat(conversationId)
                         }
                     },
@@ -151,17 +151,17 @@ fun MessengerHome(
                 overlay == "contact" -> NewContactScreen(
                     busy = viewModel.connectBusy,
                     onBack = { overlay = "new" },
-                    onSave = { phone ->
-                        viewModel.addContactByPhone(
-                            phoneE164 = phone,
+                    onSave = { username ->
+                        viewModel.addContactByUsername(
+                            rawUsername = username,
                             startChat = false,
                             onOpened = {},
                             onSaved = { overlay = "new" },
                         )
                     },
-                    onSaveAndChat = { phone ->
-                        viewModel.addContactByPhone(
-                            phoneE164 = phone,
+                    onSaveAndChat = { username ->
+                        viewModel.addContactByUsername(
+                            rawUsername = username,
                             startChat = true,
                             onOpened = { conversationId -> openChat(conversationId) },
                         )
@@ -187,7 +187,7 @@ fun MessengerHome(
                 tab == HomeTab.Calls -> CallsPlaceholder()
                 tab == HomeTab.Settings -> SettingsScreen(
                     displayName = displayName,
-                    phoneLabel = phoneLabel,
+                    usernameLabel = usernameLabel,
                     onNotice = ::notice,
                 )
             }

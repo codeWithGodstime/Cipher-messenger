@@ -16,7 +16,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 fun ApiConversation.toThread(currentUserId: String): ChatThread {
-    val title = peer.displayName.ifBlank { peer.phone }.ifBlank { "Chat" }
+    val title = peer.displayName.ifBlank { peer.username }.ifBlank { "Chat" }
     val last = lastMessage
     return ChatThread(
         id = id,
@@ -26,7 +26,7 @@ fun ApiConversation.toThread(currentUserId: String): ChatThread {
         tone = toneFor(peer.id),
         snippet = last?.body?.ifBlank { null } ?: "End-to-end encrypted",
         timeLabel = formatChatTime(last?.createdAt ?: updatedAt),
-        presence = peer.about.ifBlank { peer.phone }.ifBlank { "Tap to chat" },
+        presence = peer.about.ifBlank { "@${peer.username}" }.ifBlank { "Tap to chat" },
         unread = unread,
         receipt = when {
             last == null -> null
@@ -60,13 +60,13 @@ fun ChatThread.asContact(): ContactEntry = ContactEntry(
 )
 
 fun ApiContact.asContactEntry(): ContactEntry {
-    val name = peer.displayName.ifBlank { peer.phone }.ifBlank { "Contact" }
+    val name = peer.displayName.ifBlank { peer.username }.ifBlank { "Contact" }
     return ContactEntry(
         id = peer.id,
         name = name,
         initials = initialsFor(name),
         tone = toneFor(peer.id),
-        detail = peer.phone.ifBlank { peer.about }.ifBlank { "Tap to chat" },
+        detail = "@${peer.username}".ifBlank { peer.about }.ifBlank { "Tap to chat" },
         online = false,
         encrypted = true,
         contactId = id,

@@ -58,18 +58,18 @@ private data class SettingsEntry(
 @Composable
 fun SettingsScreen(
     displayName: String,
-    phoneLabel: String,
+    usernameLabel: String,
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
     val scheme = MaterialTheme.colorScheme
     val name = displayName.ifBlank { "Alex Vance" }
-    val phone = phoneLabel.ifBlank { "+1 (555) 019-2834" }
+    val username = usernameLabel.ifBlank { "alex" }.let { if (it.startsWith("@")) it else "@$it" }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val entries = listOf(
-        SettingsEntry("Account", "Security notifications, change number", Icons.Filled.Key, scheme.primary),
+        SettingsEntry("Account", "Security notifications, change username", Icons.Filled.Key, scheme.primary),
         SettingsEntry("Privacy", "Last seen, profile photo, read receipts, app lock", Icons.Filled.Shield, scheme.secondary),
         SettingsEntry("Security", "Encryption verification, device security", Icons.Filled.VerifiedUser, scheme.primary),
         SettingsEntry("Notifications", "Message, group, and call tones", Icons.Filled.Notifications, scheme.tertiary),
@@ -126,7 +126,7 @@ fun SettingsScreen(
         }
         ProfileCard(
             name = name,
-            phone = phone,
+            phone = username,
             onQr = { onNotice("Your QR code is not connected in this build.") },
         )
         Column(
@@ -341,7 +341,7 @@ private fun SettingsPreview() {
     MessengerTheme {
         SettingsScreen(
             displayName = "Alex Vance",
-            phoneLabel = "+1 (555) 019-2834",
+            usernameLabel = "alex",
             onNotice = {},
         )
     }

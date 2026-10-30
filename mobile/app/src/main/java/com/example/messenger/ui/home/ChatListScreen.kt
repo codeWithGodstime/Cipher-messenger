@@ -223,7 +223,11 @@ fun ChatListScreen(
                 if (recent.isEmpty()) {
                     item(key = "empty") {
                         Text(
-                            text = "No chats match that search.",
+                            text = if (threads.isEmpty()) {
+                                "No conversations yet. Tap + to start one with a peer user id."
+                            } else {
+                                "No chats match that search."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = spacing.lg),

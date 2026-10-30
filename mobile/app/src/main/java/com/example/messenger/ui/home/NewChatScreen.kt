@@ -51,17 +51,19 @@ import com.example.messenger.ui.theme.MessengerTheme
 
 @Composable
 fun NewChatScreen(
+    contacts: List<ContactEntry>,
     onBack: () -> Unit,
-    onOpenContact: (ContactEntry) -> Unit,
+    onOpenPeer: (peerUserId: String) -> Unit,
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
     var query by rememberSaveable { mutableStateOf("") }
     val searchFocus = remember { FocusRequester() }
-    val frequent = CipherSamples.frequent.filter { it.matches(query) }
-    val groups = CipherSamples.groups.filter { it.matches(query) }
-    val directory = CipherSamples.directory.filter { it.matches(query) }
+    val visibleContacts = contacts.filter { it.matches(query) }
+    val trimmedQuery = query.trim()
+    val canStartById = trimmedQuery.isNotEmpty() &&
+        visibleContacts.none { it.id.equals(trimmedQuery, ignoreCase = true) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -89,7 +91,11 @@ fun NewChatScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "528 contacts available",
+                        text = if (contacts.isEmpty()) {
+                            "Start a chat with a peer user id"
+                        } else {
+                            "${contacts.size} recent peers"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -150,7 +156,7 @@ fun NewChatScreen(
                 CipherSearchField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = "Search name or number",
+                    placeholder = "Search peers or paste user id",
                     focusRequester = searchFocus,
                     container = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
@@ -158,45 +164,30 @@ fun NewChatScreen(
                         .padding(vertical = spacing.md),
                 )
             }
+            if (canStartById) {
+                item(key = "start-by-id") {
+                    ActionCard(
+                        icon = Icons.Filled.Hub,
+                        iconBackground = MaterialTheme.colorScheme.primaryContainer,
+                        iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        title = "Chat with user",
+                        subtitle = trimmedQuery,
+                        onClick = { onOpenPeer(trimmedQuery) },
+                    )
+                }
+            }
             item(key = "dial") {
                 DialBanner(
                     onDial = { onNotice("Direct dial is not connected in this build.") },
                     modifier = Modifier.padding(bottom = spacing.md),
                 )
             }
-            if (frequent.isNotEmpty()) {
-                item(key = "frequent-label") { SectionLabel("Frequently Contacted") }
-                items(frequent, key = { it.id }) { contact ->
+            if (visibleContacts.isNotEmpty()) {
+                item(key = "peers-label") { SectionLabel("Recent peers") }
+                items(visibleContacts, key = { it.id }) { contact ->
                     ContactRow(
                         contact = contact,
-                        onClick = { onOpenContact(contact) },
-                        onCall = { onNotice("Calling ${contact.name} is not connected in this build.") },
-                    )
-                }
-            }
-            if (groups.isNotEmpty()) {
-                item(key = "groups-label") {
-                    SectionLabel(
-                        "Groups & Communities",
-                        modifier = Modifier.padding(top = spacing.lg),
-                    )
-                }
-                items(groups, key = { it.id }) { contact ->
-                    ContactRow(
-                        contact = contact,
-                        onClick = { onOpenContact(contact) },
-                        onCall = {},
-                    )
-                }
-            }
-            if (directory.isNotEmpty()) {
-                item(key = "directory-label") {
-                    SectionLabel("D", modifier = Modifier.padding(top = spacing.lg))
-                }
-                items(directory, key = { it.id }) { contact ->
-                    ContactRow(
-                        contact = contact,
-                        onClick = { onOpenContact(contact) },
+                        onClick = { onOpenPeer(contact.id) },
                         onCall = { onNotice("Calling ${contact.name} is not connected in this build.") },
                     )
                 }
@@ -450,13 +441,20 @@ private fun ContactRow(
 
 private fun ContactEntry.matches(query: String): Boolean {
     if (query.isBlank()) return true
-    return name.contains(query, ignoreCase = true) || detail.contains(query, ignoreCase = true)
+    return name.contains(query, ignoreCase = true) ||
+        detail.contains(query, ignoreCase = true) ||
+        id.contains(query, ignoreCase = true)
 }
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 884)
 @Composable
 private fun NewChatPreview() {
     MessengerTheme {
-        NewChatScreen(onBack = {}, onOpenContact = {}, onNotice = {})
+        NewChatScreen(
+            contacts = CipherSamples.frequent,
+            onBack = {},
+            onOpenPeer = {},
+            onNotice = {},
+        )
     }
 }

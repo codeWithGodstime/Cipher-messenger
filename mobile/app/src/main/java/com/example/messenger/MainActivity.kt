@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
                 var phoneLabel by remember { mutableStateOf(sessionStore.phoneLabel) }
                 if (signedIn) {
                     MessengerHome(
+                        sessionStore = sessionStore,
                         displayName = displayName,
                         phoneLabel = phoneLabel,
                     )

@@ -46,3 +46,51 @@ data class Session(
     val created: Boolean,
     val profile: Profile,
 )
+
+@Serializable
+data class ApiMessage(
+    val id: String,
+    @SerialName("conversation_id") val conversationId: String,
+    @SerialName("sender_id") val senderId: String,
+    val body: String,
+    @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class ApiConversation(
+    val id: String,
+    val peer: Profile,
+    @SerialName("last_message") val lastMessage: ApiMessage? = null,
+    val unread: Int = 0,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class ConversationList(
+    val conversations: List<ApiConversation>,
+)
+
+@Serializable
+data class OpenConversationRequest(
+    @SerialName("user_id") val userId: String,
+)
+
+@Serializable
+data class MessageList(
+    val messages: List<ApiMessage>,
+)
+
+@Serializable
+data class SendMessageRequest(
+    val body: String,
+)
+
+@Serializable
+data class WsEnvelope(
+    val type: String,
+    @SerialName("conversation_id") val conversationId: String? = null,
+    val body: String? = null,
+    val message: ApiMessage? = null,
+    val error: String? = null,
+)

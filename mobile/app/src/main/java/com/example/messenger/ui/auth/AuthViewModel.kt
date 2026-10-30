@@ -151,7 +151,7 @@ class AuthViewModel(
             profileError = null
             when (val result = repository.updateDisplayName(token, name)) {
                 is ProfileCall.Success -> {
-                    sessionStore.updateDisplayName(result.profile.displayName)
+                    sessionStore.rememberProfile(result.profile)
                     profileSaving = false
                     profileSaved = true
                 }

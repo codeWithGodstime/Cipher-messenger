@@ -3,9 +3,8 @@ package com.example.messenger.ui.home
 import java.util.Calendar
 
 /**
- * Local stand-ins for the chat list, conversation, and new-chat screens.
- * The API stores a profile only, so these threads are the Stitch sample
- * until conversations exist on the server.
+ * UI models for the chat list, conversation, and new-chat screens.
+ * [CipherSamples] remains for Compose previews; live data comes from ChatViewModel.
  */
 
 enum class HomeTab {
@@ -42,6 +41,7 @@ data class ChatThread(
     val snippet: String,
     val timeLabel: String,
     val presence: String,
+    val peerId: String = "",
     val online: Boolean = false,
     val unread: Int = 0,
     val receipt: Receipt? = null,

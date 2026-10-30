@@ -1,6 +1,7 @@
 package com.example.messenger.data.auth
 
 import android.content.Context
+import com.example.messenger.data.api.Profile
 import com.example.messenger.data.api.Session
 
 /**
@@ -19,6 +20,9 @@ class SessionStore(context: Context) {
     val refreshToken: String?
         get() = prefs.getString(KEY_REFRESH, null)?.takeIf { it.isNotBlank() }
 
+    val userId: String?
+        get() = prefs.getString(KEY_USER_ID, null)?.takeIf { it.isNotBlank() }
+
     val displayName: String
         get() = prefs.getString(KEY_DISPLAY_NAME, "").orEmpty()
 
@@ -29,8 +33,17 @@ class SessionStore(context: Context) {
         prefs.edit()
             .putString(KEY_ACCESS, session.accessToken)
             .putString(KEY_REFRESH, session.refreshToken)
+            .putString(KEY_USER_ID, session.profile.id)
             .putString(KEY_DISPLAY_NAME, session.profile.displayName)
             .putString(KEY_PHONE_LABEL, session.profile.phone)
+            .apply()
+    }
+
+    fun rememberProfile(profile: Profile) {
+        prefs.edit()
+            .putString(KEY_USER_ID, profile.id)
+            .putString(KEY_DISPLAY_NAME, profile.displayName)
+            .putString(KEY_PHONE_LABEL, profile.phone)
             .apply()
     }
 
@@ -55,6 +68,7 @@ class SessionStore(context: Context) {
         const val KEY_LOGGED_IN = "logged_in"
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
+        const val KEY_USER_ID = "user_id"
         const val KEY_DISPLAY_NAME = "display_name"
         const val KEY_PHONE_LABEL = "phone_label"
     }

@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func Open() (*gorm.DB, error) {
@@ -15,7 +16,10 @@ func Open() (*gorm.DB, error) {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		// Expected misses (open-or-create DM, etc.) should not spam "record not found".
+		Logger: logger.Default.LogMode(logger.Warn),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

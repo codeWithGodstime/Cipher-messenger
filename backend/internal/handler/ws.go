@@ -64,7 +64,13 @@ func (h *WSHandler) Connect(c *gin.Context) {
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("websocket upgrade: %v", err)
+		// Usually means a reverse proxy dropped Connection/Upgrade hop-by-hop headers.
+		log.Printf(
+			"websocket upgrade: %v (Connection=%q Upgrade=%q)",
+			err,
+			c.GetHeader("Connection"),
+			c.GetHeader("Upgrade"),
+		)
 		return
 	}
 	client := ws.NewClient(h.hub, userID, h.chat, conn)

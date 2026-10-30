@@ -44,8 +44,9 @@ object ApiClient {
 
     fun messengerSocket(sessionStore: SessionStore): MessengerSocket {
         val bound = bind(sessionStore)
+        // Dedicated client: WebSocket handshakes should not share the HTTP authenticator.
         return MessengerSocket(
-            http = bound.http,
+            http = plainHttp,
             json = json,
             wsUrl = MessengerSocket.wsUrlFromApiBase(BuildConfig.API_BASE_URL),
             tokenProvider = { bound.tokenRefresher.ensureFreshAccessToken() },

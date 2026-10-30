@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "deploy/**"
       - ".github/workflows/api.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "deploy/**"
       - ".github/workflows/api.yml"
 
 jobs:
@@ -57,11 +59,14 @@ jobs:
         run: |
           set -euo pipefail
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
-            /tmp/messenger-api root@138.68.14.231:/tmp/messenger-api.new
+            /tmp/messenger-api deploy/ensure-nginx-websocket.sh \
+            root@138.68.14.231:/tmp/
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes root@138.68.14.231 'bash -s' <<'EOF'
           set -euo pipefail
-          install -m 755 /tmp/messenger-api.new /usr/local/bin/messenger-api
-          rm -f /tmp/messenger-api.new
+          install -m 755 /tmp/messenger-api /usr/local/bin/messenger-api
+          rm -f /tmp/messenger-api
+          install -m 755 /tmp/ensure-nginx-websocket.sh /usr/local/sbin/ensure-nginx-websocket
+          /usr/local/sbin/ensure-nginx-websocket
           systemctl restart messenger-api
           sleep 1
           systemctl is-active messenger-api

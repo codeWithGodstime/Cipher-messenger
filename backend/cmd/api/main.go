@@ -23,6 +23,7 @@ import (
 	"messenger/backend/internal/service"
 	"messenger/backend/internal/sms"
 	"messenger/backend/internal/token"
+	"messenger/backend/internal/ws"
 )
 
 func main() {
@@ -85,13 +86,28 @@ func main() {
 	))
 	profile := handler.NewProfileHandler(service.NewProfileService(users))
 
+	hub := ws.NewHub()
+	conversations := repository.NewConversationRepository(db)
+	messages := repository.NewMessageRepository(db)
+	chatService := service.NewChatService(users, conversations, messages, hub)
+	chat := handler.NewChatHandler(chatService)
+	wsHandler := handler.NewWSHandler(hub, chatService, tokens, sessions)
+
 	addr := ":" + cfg.Port
 
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      routes.New(health, auth, profile, middleware.RequireAccess(tokens, sessions)),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr: addr,
+		Handler: routes.New(
+			health,
+			auth,
+			profile,
+			chat,
+			wsHandler,
+			middleware.RequireAccess(tokens, sessions),
+		),
+		ReadTimeout: 5 * time.Second,
+		// WriteTimeout must be zero so long-lived WebSocket connections are not killed.
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 

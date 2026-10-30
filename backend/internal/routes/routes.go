@@ -8,7 +8,14 @@ import (
 	"messenger/backend/internal/handler"
 )
 
-func New(health *handler.HealthHandler, auth *handler.AuthHandler, profile *handler.ProfileHandler, authenticate gin.HandlerFunc) http.Handler {
+func New(
+	health *handler.HealthHandler,
+	auth *handler.AuthHandler,
+	profile *handler.ProfileHandler,
+	chat *handler.ChatHandler,
+	wsHandler *handler.WSHandler,
+	authenticate gin.HandlerFunc,
+) http.Handler {
 	r := gin.Default()
 	r.GET("/health", health.Get)
 	r.POST("/auth/otp", auth.RequestOTP)
@@ -17,5 +24,10 @@ func New(health *handler.HealthHandler, auth *handler.AuthHandler, profile *hand
 	r.POST("/auth/logout", authenticate, auth.Logout)
 	r.GET("/me", authenticate, profile.Get)
 	r.PATCH("/me", authenticate, profile.Update)
+	r.GET("/conversations", authenticate, chat.ListConversations)
+	r.POST("/conversations", authenticate, chat.OpenConversation)
+	r.GET("/conversations/:id/messages", authenticate, chat.ListMessages)
+	r.POST("/conversations/:id/messages", authenticate, chat.SendMessage)
+	r.GET("/ws", wsHandler.Connect)
 	return r
 }

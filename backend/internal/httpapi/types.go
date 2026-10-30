@@ -84,6 +84,63 @@ type ProfileUpdate struct {
 	ProfilePhoto *string `json:"profile_photo,omitempty" description:"Up to 2048 characters."`
 }
 
+// Message is a chat message in a conversation.
+type Message struct {
+	ID             string    `json:"id" required:"true"`
+	ConversationID string    `json:"conversation_id" required:"true"`
+	SenderID       string    `json:"sender_id" required:"true"`
+	Body           string    `json:"body" required:"true"`
+	CreatedAt      time.Time `json:"created_at" required:"true"`
+}
+
+// Conversation is a 1:1 DM summary for the signed-in user.
+type Conversation struct {
+	ID          string    `json:"id" required:"true"`
+	Peer        Profile   `json:"peer" required:"true"`
+	LastMessage *Message  `json:"last_message,omitempty"`
+	Unread      int       `json:"unread" required:"true" description:"Unread count. Always 0 until receipts ship."`
+	CreatedAt   time.Time `json:"created_at" required:"true"`
+	UpdatedAt   time.Time `json:"updated_at" required:"true"`
+}
+
+// ConversationList is the body of GET /conversations.
+type ConversationList struct {
+	Conversations []Conversation `json:"conversations" required:"true"`
+}
+
+// OpenConversation is the body of POST /conversations.
+type OpenConversation struct {
+	UserID string `json:"user_id" required:"true" description:"Peer user id to open or create a DM with."`
+}
+
+// MessageList is the body of GET /conversations/{id}/messages.
+type MessageList struct {
+	Messages []Message `json:"messages" required:"true" description:"Newest first."`
+}
+
+// SendMessage is the body of POST /conversations/{id}/messages.
+type SendMessage struct {
+	Body string `json:"body" required:"true" description:"1 to 4000 characters."`
+}
+
+// ListMessagesQuery is the path and query for GET /conversations/{id}/messages.
+type ListMessagesQuery struct {
+	ID     string `path:"id" required:"true" description:"Conversation id."`
+	Before string `query:"before" description:"Return messages created before this RFC3339 timestamp."`
+	Limit  int    `query:"limit" description:"Page size from 1 to 100. Defaults to 50."`
+}
+
+// SendMessageRequest is the path and body for POST /conversations/{id}/messages.
+type SendMessageRequest struct {
+	ID   string `path:"id" required:"true" description:"Conversation id."`
+	Body string `json:"body" required:"true" description:"1 to 4000 characters."`
+}
+
+// WSInfo documents the WebSocket upgrade at GET /ws.
+type WSInfo struct {
+	Protocol string `json:"protocol" required:"true" description:"JSON frames. Auth via Authorization Bearer or access_token query."`
+}
+
 // Error is the JSON body of a failed request.
 type Error struct {
 	Code       string `json:"error" required:"true" description:"Stable machine-readable code."`
@@ -129,4 +186,29 @@ func NewError(code, message string, retryAfter int) Error {
 
 func InternalError() Error {
 	return NewError(ErrorInternal, MessageInternal, 0)
+}
+
+func NewMessage(message *model.Message) Message {
+	return Message{
+		ID:             message.ID,
+		ConversationID: message.ConversationID,
+		SenderID:       message.SenderID,
+		Body:           message.Body,
+		CreatedAt:      message.CreatedAt,
+	}
+}
+
+func NewConversation(id string, peer Profile, last *model.Message, unread int, createdAt, updatedAt time.Time) Conversation {
+	out := Conversation{
+		ID:        id,
+		Peer:      peer,
+		Unread:    unread,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}
+	if last != nil {
+		msg := NewMessage(last)
+		out.LastMessage = &msg
+	}
+	return out
 }

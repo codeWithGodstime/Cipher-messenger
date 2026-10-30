@@ -45,8 +45,10 @@ type operation struct {
 	summary     string
 	description string
 	auth        bool
-	body        any
-	responses   []response
+	// request is path/query/json input reflected into parameters and body.
+	request   any
+	bodyOnly  bool // when true, request fields are JSON body only (legacy auth routes).
+	responses []response
 }
 
 func openAPI() (*openapi31.Spec, error) {
@@ -86,7 +88,8 @@ func openAPI() (*openapi31.Spec, error) {
 			method: http.MethodPost, path: "/auth/otp", id: "requestOtp",
 			summary:     "Request a one-time code",
 			description: "Sends a code when OTP is required. When OTP is disabled, signs in and returns a session instead.",
-			body:        new(OTPRequest),
+			request:     new(OTPRequest),
+			bodyOnly:    true,
 			responses: []response{
 				{http.StatusOK, new(OTPSuccess), "A pending code, or a session when OTP is disabled."},
 				failure(http.StatusBadRequest, "The phone number or JSON body is invalid."),
@@ -99,7 +102,8 @@ func openAPI() (*openapi31.Spec, error) {
 			method: http.MethodPost, path: "/auth/verify", id: "verifyOtp",
 			summary:     "Verify a one-time code",
 			description: "Checks the code, creates the account on first success, and returns a session.",
-			body:        new(VerifyRequest),
+			request:     new(VerifyRequest),
+			bodyOnly:    true,
 			responses: []response{
 				{http.StatusOK, new(Session), "Session for the verified phone number."},
 				failure(http.StatusBadRequest, "The phone number, code, or JSON body is invalid."),
@@ -111,7 +115,8 @@ func openAPI() (*openapi31.Spec, error) {
 			method: http.MethodPost, path: "/auth/refresh", id: "refreshSession",
 			summary:     "Refresh a session",
 			description: "Rotates the refresh token and returns a new access token for the same session.",
-			body:        new(RefreshRequest),
+			request:     new(RefreshRequest),
+			bodyOnly:    true,
 			responses: []response{
 				{http.StatusOK, new(TokenPair), "New access and refresh tokens."},
 				failure(http.StatusBadRequest, "The JSON body is invalid."),
@@ -145,10 +150,78 @@ func openAPI() (*openapi31.Spec, error) {
 			summary:     "Update the signed-in profile",
 			description: "Updates only the fields present in the body.",
 			auth:        true,
-			body:        new(ProfileUpdate),
+			request:     new(ProfileUpdate),
+			bodyOnly:    true,
 			responses: []response{
 				{http.StatusOK, new(Profile), "The updated profile."},
 				failure(http.StatusBadRequest, "The JSON body or a profile field is invalid."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodGet, path: "/conversations", id: "listConversations",
+			summary:     "List conversations",
+			description: "Returns 1:1 DMs for the signed-in user, newest activity first.",
+			auth:        true,
+			responses: []response{
+				{http.StatusOK, new(ConversationList), "Conversation summaries."},
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodPost, path: "/conversations", id: "openConversation",
+			summary:     "Open or create a DM",
+			description: "Opens an existing 1:1 conversation with the peer user, or creates one.",
+			auth:        true,
+			request:     new(OpenConversation),
+			bodyOnly:    true,
+			responses: []response{
+				{http.StatusOK, new(Conversation), "The conversation summary."},
+				failure(http.StatusBadRequest, "The JSON body or user_id is invalid."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusNotFound, "The peer user was not found."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodGet, path: "/conversations/{id}/messages", id: "listMessages",
+			summary:     "List messages",
+			description: "Returns messages newest first. Optional before (RFC3339) and limit (1-100, default 50).",
+			auth:        true,
+			request:     new(ListMessagesQuery),
+			responses: []response{
+				{http.StatusOK, new(MessageList), "Messages in the conversation."},
+				failure(http.StatusBadRequest, "before or limit is invalid."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusForbidden, "The signed-in user is not a member."),
+				failure(http.StatusNotFound, "Conversation not found."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodPost, path: "/conversations/{id}/messages", id: "sendMessage",
+			summary:     "Send a message",
+			description: "Persists a message and fans it out to conversation members over WebSocket.",
+			auth:        true,
+			request:     new(SendMessageRequest),
+			responses: []response{
+				{http.StatusCreated, new(Message), "The created message."},
+				failure(http.StatusBadRequest, "The JSON body or body field is invalid."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusForbidden, "The signed-in user is not a member."),
+				failure(http.StatusNotFound, "Conversation not found."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodGet, path: "/ws", id: "websocket",
+			summary: "Open a WebSocket",
+			description: "Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query. " +
+				"Server events: message.created. Client commands: message.send, ping. Keepalive: ping/pong.",
+			responses: []response{
+				{http.StatusSwitchingProtocols, new(WSInfo), "WebSocket upgrade accepted."},
 				failure(http.StatusUnauthorized, "Missing or invalid access token."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
@@ -187,15 +260,19 @@ func add(r *openapi31.Reflector, item operation) error {
 	if item.auth {
 		op.AddSecurity("bearerAuth")
 	}
-	if item.body != nil {
-		op.AddReqStructure(item.body, func(cu *openapi.ContentUnit) {
-			cu.Customize = func(cor openapi.ContentOrReference) {
-				body, ok := cor.(*openapi31.RequestBodyOrReference)
-				if ok && body.RequestBody != nil {
-					body.RequestBody.WithRequired(true)
+	if item.request != nil {
+		if item.bodyOnly {
+			op.AddReqStructure(item.request, func(cu *openapi.ContentUnit) {
+				cu.Customize = func(cor openapi.ContentOrReference) {
+					body, ok := cor.(*openapi31.RequestBodyOrReference)
+					if ok && body.RequestBody != nil {
+						body.RequestBody.WithRequired(true)
+					}
 				}
-			}
-		})
+			})
+		} else {
+			op.AddReqStructure(item.request)
+		}
 	}
 	for _, resp := range item.responses {
 		op.AddRespStructure(resp.body, status(resp.status, resp.text))

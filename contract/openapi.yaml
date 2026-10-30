@@ -153,6 +153,206 @@ paths:
       summary: Verify a one-time code
       tags:
       - Messenger
+  /conversations:
+    get:
+      description: Returns 1:1 DMs for the signed-in user, newest activity first.
+      operationId: listConversations
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationList'
+          description: Conversation summaries.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: List conversations
+      tags:
+      - Messenger
+    post:
+      description: Opens an existing 1:1 conversation with the peer user, or creates
+        one.
+      operationId: openConversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenConversation'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+          description: The conversation summary.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body or user_id is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The peer user was not found.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Open or create a DM
+      tags:
+      - Messenger
+  /conversations/{id}/messages:
+    get:
+      description: Returns messages newest first. Optional before (RFC3339) and limit
+        (1-100, default 50).
+      operationId: listMessages
+      parameters:
+      - description: Return messages created before this RFC3339 timestamp.
+        in: query
+        name: before
+        schema:
+          description: Return messages created before this RFC3339 timestamp.
+          type: string
+      - description: Page size from 1 to 100. Defaults to 50.
+        in: query
+        name: limit
+        schema:
+          description: Page size from 1 to 100. Defaults to 50.
+          type: integer
+      - description: Conversation id.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Conversation id.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageList'
+          description: Messages in the conversation.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: before or limit is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The signed-in user is not a member.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conversation not found.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: List messages
+      tags:
+      - Messenger
+    post:
+      description: Persists a message and fans it out to conversation members over
+        WebSocket.
+      operationId: sendMessage
+      parameters:
+      - description: Conversation id.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Conversation id.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+          description: The created message.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body or body field is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The signed-in user is not a member.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conversation not found.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Send a message
+      tags:
+      - Messenger
   /health:
     get:
       description: Reports whether the API can reach its database.
@@ -239,8 +439,71 @@ paths:
       summary: Update the signed-in profile
       tags:
       - Messenger
+  /ws:
+    get:
+      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token
+        query. Server events: message.created. Client commands: message.send, ping.
+        Keepalive: ping/pong.'
+      operationId: websocket
+      responses:
+        "101":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WSInfo'
+          description: WebSocket upgrade accepted.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      summary: Open a WebSocket
+      tags:
+      - Messenger
 components:
   schemas:
+    Conversation:
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        last_message:
+          $ref: '#/components/schemas/Message'
+        peer:
+          $ref: '#/components/schemas/Profile'
+        unread:
+          description: Unread count. Always 0 until receipts ship.
+          type: integer
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - id
+      - peer
+      - unread
+      - created_at
+      - updated_at
+      type: object
+    ConversationList:
+      properties:
+        conversations:
+          items:
+            $ref: '#/components/schemas/Conversation'
+          type:
+          - array
+          - "null"
+      required:
+      - conversations
+      type: object
     Error:
       properties:
         error:
@@ -263,6 +526,38 @@ components:
       required:
       - status
       type: object
+    Message:
+      properties:
+        body:
+          type: string
+        conversation_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        sender_id:
+          type: string
+      required:
+      - id
+      - conversation_id
+      - sender_id
+      - body
+      - created_at
+      type: object
+    MessageList:
+      properties:
+        messages:
+          description: Newest first.
+          items:
+            $ref: '#/components/schemas/Message'
+          type:
+          - array
+          - "null"
+      required:
+      - messages
+      type: object
     OTPPending:
       properties:
         expires_in:
@@ -283,6 +578,14 @@ components:
       oneOf:
       - $ref: '#/components/schemas/OTPPending'
       - $ref: '#/components/schemas/Session'
+    OpenConversation:
+      properties:
+        user_id:
+          description: Peer user id to open or create a DM with.
+          type: string
+      required:
+      - user_id
+      type: object
     Profile:
       properties:
         about:
@@ -335,6 +638,14 @@ components:
           type: string
       required:
       - refresh_token
+      type: object
+    SendMessageRequest:
+      properties:
+        body:
+          description: 1 to 4000 characters.
+          type: string
+      required:
+      - body
       type: object
     Session:
       properties:
@@ -390,6 +701,15 @@ components:
       required:
       - phone
       - code
+      type: object
+    WSInfo:
+      properties:
+        protocol:
+          description: JSON frames. Auth via Authorization Bearer or access_token
+            query.
+          type: string
+      required:
+      - protocol
       type: object
   securitySchemes:
     bearerAuth:

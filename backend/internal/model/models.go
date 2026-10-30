@@ -31,6 +31,34 @@ type Session struct {
 
 func (Session) TableName() string { return "sessions" }
 
+// Conversation is a 1:1 DM. DmKey is sorted "userA:userB" so open-or-create is unique.
+type Conversation struct {
+	ID        string    `gorm:"primaryKey;size:36"`
+	DmKey     string    `gorm:"size:73;not null;uniqueIndex"`
+	CreatedAt time.Time `gorm:"not null"`
+	UpdatedAt time.Time `gorm:"not null;index"`
+}
+
+func (Conversation) TableName() string { return "conversations" }
+
+type ConversationMember struct {
+	ConversationID string    `gorm:"primaryKey;size:36"`
+	UserID         string    `gorm:"primaryKey;size:36;index"`
+	CreatedAt      time.Time `gorm:"not null"`
+}
+
+func (ConversationMember) TableName() string { return "conversation_members" }
+
+type Message struct {
+	ID             string    `gorm:"primaryKey;size:36"`
+	ConversationID string    `gorm:"size:36;not null;index:idx_messages_conversation_created,priority:1"`
+	SenderID       string    `gorm:"size:36;not null;index"`
+	Body           string    `gorm:"size:4000;not null"`
+	CreatedAt      time.Time `gorm:"not null;index:idx_messages_conversation_created,priority:2"`
+}
+
+func (Message) TableName() string { return "messages" }
+
 func NewID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

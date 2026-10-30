@@ -32,6 +32,20 @@ func Unauthorized() *Error {
 	return &Error{Status: http.StatusUnauthorized, Code: "unauthorized", Message: "Missing or invalid access token."}
 }
 
+func NotFound(message string) *Error {
+	if message == "" {
+		message = "Resource not found."
+	}
+	return &Error{Status: http.StatusNotFound, Code: "not_found", Message: message}
+}
+
+func Forbidden(message string) *Error {
+	if message == "" {
+		message = "You do not have access to this resource."
+	}
+	return &Error{Status: http.StatusForbidden, Code: "forbidden", Message: message}
+}
+
 func InvalidRefresh() *Error {
 	return &Error{Status: http.StatusUnauthorized, Code: "invalid_refresh", Message: "The refresh token is invalid or expired."}
 }

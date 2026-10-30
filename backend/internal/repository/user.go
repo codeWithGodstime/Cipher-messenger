@@ -18,6 +18,7 @@ var (
 type UserRepository interface {
 	FindByPhone(ctx context.Context, phone string) (*model.User, error)
 	FindByID(ctx context.Context, id string) (*model.User, error)
+	FindByIDs(ctx context.Context, ids []string) ([]model.User, error)
 	Create(ctx context.Context, user *model.User) error
 	UpdateProfile(ctx context.Context, user *model.User) error
 }
@@ -56,6 +57,17 @@ func (r *userRepository) FindByID(ctx context.Context, id string) (*model.User, 
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (r *userRepository) FindByIDs(ctx context.Context, ids []string) ([]model.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var users []model.User
+	if err := r.conn(ctx).Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (r *userRepository) Create(ctx context.Context, user *model.User) error {

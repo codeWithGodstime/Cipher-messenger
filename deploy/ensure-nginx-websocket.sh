@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Ensure nginx forwards WebSocket upgrades to the Messenger API on :8080.
 # Hop-by-hop Connection/Upgrade headers are dropped unless set explicitly.
+#
+# Idempotent: only installs the map + /ws snippet and includes the snippet once.
+# Does not rewrite existing location / proxy blocks (avoids duplicate directives).
 set -euo pipefail
 
 MAP_CONF=/etc/nginx/conf.d/00-websocket-map.conf
@@ -64,20 +67,6 @@ for conf in "${configs[@]}"; do
   fi
   patched=1
   echo "patched $conf for /ws websocket proxy"
-done
-
-for conf in "${configs[@]}"; do
-  if ! grep -qE 'proxy_pass[[:space:]]+http://(127\.0\.0\.1|localhost):8080' "$conf" 2>/dev/null; then
-    continue
-  fi
-  if grep -q 'proxy_set_header Upgrade' "$conf"; then
-    continue
-  fi
-  sed -i -E \
-    '/proxy_pass[[:space:]]+http:\/\/(127\.0\.0\.1|localhost):8080/a\        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection $connection_upgrade;' \
-    "$conf"
-  patched=1
-  echo "added Upgrade headers in $conf"
 done
 
 nginx -t

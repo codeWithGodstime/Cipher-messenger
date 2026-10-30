@@ -1,5 +1,6 @@
 package com.example.messenger.ui.auth
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -45,6 +46,10 @@ fun AuthApp(
             AuthRoute.Username -> routeName = AuthRoute.Welcome.name
             AuthRoute.Profile -> routeName = AuthRoute.Username.name
         }
+    }
+
+    BackHandler(enabled = route != AuthRoute.Welcome) {
+        goBack()
     }
 
     LaunchedEffect(viewModel) {

@@ -1,5 +1,6 @@
 package com.example.messenger.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -62,6 +63,20 @@ fun MessengerHome(
     fun openChat(id: String) {
         viewModel.openConversation(id)
         overlay = "chat:$id"
+    }
+
+    fun popOverlay() {
+        when {
+            overlay == "contact" -> overlay = "new"
+            overlay == "new" || overlay.startsWith("chat:") -> {
+                overlay = "none"
+                viewModel.leaveConversation()
+            }
+        }
+    }
+
+    BackHandler(enabled = overlay != "none") {
+        popOverlay()
     }
 
     LaunchedEffect(viewModel.notice) {

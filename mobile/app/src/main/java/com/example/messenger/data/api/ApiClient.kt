@@ -3,6 +3,8 @@ package com.example.messenger.data.api
 import com.example.messenger.BuildConfig
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.SessionStore
+import com.example.messenger.data.auth.TokenAuthenticator
+import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatRepository
 import com.example.messenger.data.chat.MessengerSocket
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -15,38 +17,76 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
     val json: Json = Json { ignoreUnknownKeys = true }
 
-    private val http: OkHttpClient by lazy {
+    private fun newHttpBuilder(): OkHttpClient.Builder =
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .pingInterval(45, TimeUnit.SECONDS)
-            .build()
+
+    /** No authenticator — used for login and token refresh to avoid recursion. */
+    private val plainHttp: OkHttpClient by lazy { newHttpBuilder().build() }
+
+    private val plainApi: MessengerApi by lazy { retrofit(plainHttp) }
+
+    val repository: AuthRepository by lazy {
+        AuthRepository(plainApi, json)
     }
 
-    private val api: MessengerApi by lazy {
+    @Volatile
+    private var session: BoundSession? = null
+
+    val chatRepository: ChatRepository
+        get() = requireSession().chatRepository
+
+    fun tokenRefresher(sessionStore: SessionStore): TokenRefresher =
+        bind(sessionStore).tokenRefresher
+
+    fun messengerSocket(sessionStore: SessionStore): MessengerSocket {
+        val bound = bind(sessionStore)
+        return MessengerSocket(
+            http = bound.http,
+            json = json,
+            wsUrl = MessengerSocket.wsUrlFromApiBase(BuildConfig.API_BASE_URL),
+            tokenProvider = { bound.tokenRefresher.ensureFreshAccessToken() },
+        )
+    }
+
+    @Synchronized
+    fun bind(sessionStore: SessionStore): BoundSession {
+        session?.let { existing ->
+            if (existing.sessionStore === sessionStore) return existing
+        }
+        val refresher = TokenRefresher(sessionStore, plainApi, json)
+        val http = newHttpBuilder()
+            .authenticator(TokenAuthenticator(refresher))
+            .build()
+        val api = retrofit(http)
+        val bound = BoundSession(
+            sessionStore = sessionStore,
+            tokenRefresher = refresher,
+            http = http,
+            chatRepository = ChatRepository(api, json),
+        )
+        session = bound
+        return bound
+    }
+
+    private fun requireSession(): BoundSession =
+        session ?: error("Call ApiClient.bind(sessionStore) before using chat APIs.")
+
+    private fun retrofit(client: OkHttpClient): MessengerApi =
         Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)
-            .client(http)
+            .client(client)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(MessengerApi::class.java)
-    }
 
-    val repository: AuthRepository by lazy {
-        AuthRepository(api, json)
-    }
-
-    val chatRepository: ChatRepository by lazy {
-        ChatRepository(api, json)
-    }
-
-    fun messengerSocket(sessionStore: SessionStore): MessengerSocket {
-        return MessengerSocket(
-            http = http,
-            json = json,
-            wsUrl = MessengerSocket.wsUrlFromApiBase(BuildConfig.API_BASE_URL),
-            tokenProvider = { sessionStore.accessToken },
-        )
-    }
+    data class BoundSession(
+        val sessionStore: SessionStore,
+        val tokenRefresher: TokenRefresher,
+        val http: OkHttpClient,
+        val chatRepository: ChatRepository,
+    )
 }

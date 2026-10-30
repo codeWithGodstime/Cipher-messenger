@@ -7,11 +7,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.Session
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.OtpCall
 import com.example.messenger.data.auth.ProfileCall
 import com.example.messenger.data.auth.SessionStore
+import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.auth.VerifyCall
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -25,6 +27,7 @@ sealed interface AuthEvent {
 class AuthViewModel(
     private val repository: AuthRepository,
     private val sessionStore: SessionStore,
+    private val tokens: TokenRefresher,
 ) : ViewModel() {
     var phoneLoading by mutableStateOf(false)
         private set
@@ -55,7 +58,6 @@ class AuthViewModel(
     val authEvents = events.receiveAsFlow()
 
     private var phoneE164: String = ""
-    private var accessToken: String? = sessionStore.accessToken
     private var resendInFlight = false
 
     fun requestCode(e164: String) {
@@ -140,13 +142,13 @@ class AuthViewModel(
     }
 
     fun saveName(name: String) {
-        val token = accessToken
-        if (token == null) {
-            profileError = "Sign in again before saving your name."
-            return
-        }
         if (profileSaving || profileSaved) return
         viewModelScope.launch {
+            val token = tokens.ensureFreshAccessToken()
+            if (token == null) {
+                profileError = "Sign in again before saving your name."
+                return@launch
+            }
             profileSaving = true
             profileError = null
             when (val result = repository.updateDisplayName(token, name)) {
@@ -176,7 +178,6 @@ class AuthViewModel(
     }
 
     private fun rememberSession(session: Session) {
-        accessToken = session.accessToken
         sessionStore.rememberSession(session)
     }
 }
@@ -188,7 +189,11 @@ class AuthViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return AuthViewModel(repository, sessionStore) as T
+            return AuthViewModel(
+                repository = repository,
+                sessionStore = sessionStore,
+                tokens = ApiClient.bind(sessionStore).tokenRefresher,
+            ) as T
         }
         error("Unknown ViewModel: ${modelClass.name}")
     }

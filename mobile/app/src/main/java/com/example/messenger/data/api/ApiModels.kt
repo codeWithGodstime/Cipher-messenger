@@ -48,6 +48,19 @@ data class Session(
 )
 
 @Serializable
+data class RefreshRequest(
+    @SerialName("refresh_token") val refreshToken: String,
+)
+
+@Serializable
+data class TokenPair(
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("refresh_token") val refreshToken: String,
+    @SerialName("token_type") val tokenType: String,
+    @SerialName("expires_in") val expiresIn: Int,
+)
+
+@Serializable
 data class ApiMessage(
     val id: String,
     @SerialName("conversation_id") val conversationId: String,

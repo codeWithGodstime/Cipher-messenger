@@ -10,6 +10,7 @@ import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
 import com.example.messenger.data.auth.SessionStore
+import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatCall
 import com.example.messenger.data.chat.ChatRepository
 import com.example.messenger.data.chat.MessengerSocket
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 
 class ChatViewModel(
     private val sessionStore: SessionStore,
+    private val tokens: TokenRefresher,
     private val repository: ChatRepository,
     private val socket: MessengerSocket,
 ) : ViewModel() {
@@ -58,6 +60,7 @@ class ChatViewModel(
         }
 
     init {
+        tokens.start(viewModelScope)
         socket.start(viewModelScope)
         viewModelScope.launch {
             socket.incoming.collect(::onIncomingMessage)
@@ -79,6 +82,7 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        tokens.stop()
         socket.stop()
         super.onCleared()
     }
@@ -92,11 +96,11 @@ class ChatViewModel(
     }
 
     fun refreshConversations() {
-        val token = sessionStore.accessToken ?: run {
-            listError = "Sign in again to load chats."
-            return
-        }
         viewModelScope.launch {
+            val token = requireAccessToken() ?: run {
+                listError = "Sign in again to load chats."
+                return@launch
+            }
             listLoading = threads.isEmpty()
             listError = null
             when (val result = repository.listConversations(token)) {
@@ -130,12 +134,12 @@ class ChatViewModel(
     fun sendMessage(conversationId: String, body: String) {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return
-        val token = sessionStore.accessToken ?: run {
-            notice = "Sign in again to send messages."
-            return
-        }
         viewModelScope.launch {
             if (socket.sendMessage(conversationId, trimmed)) {
+                return@launch
+            }
+            val token = requireAccessToken() ?: run {
+                notice = "Sign in again to send messages."
                 return@launch
             }
             when (val result = repository.sendMessage(token, conversationId, trimmed)) {
@@ -159,8 +163,8 @@ class ChatViewModel(
     }
 
     fun refreshContacts() {
-        val token = sessionStore.accessToken ?: return
         viewModelScope.launch {
+            val token = requireAccessToken() ?: return@launch
             contactsLoading = savedContacts.isEmpty()
             when (val result = repository.listContacts(token)) {
                 is ChatCall.Ok -> {
@@ -208,12 +212,12 @@ class ChatViewModel(
             notice = "Enter a phone number to add a contact."
             return
         }
-        val token = sessionStore.accessToken ?: run {
-            notice = "Sign in again to add a contact."
-            return
-        }
         if (connectBusy) return
         viewModelScope.launch {
+            val token = requireAccessToken() ?: run {
+                notice = "Sign in again to add a contact."
+                return@launch
+            }
             connectBusy = true
             when (val result = repository.addContact(token, phone = phone)) {
                 is ChatCall.Ok -> {
@@ -236,11 +240,11 @@ class ChatViewModel(
     }
 
     fun removeContact(contactId: String) {
-        val token = sessionStore.accessToken ?: run {
-            notice = "Sign in again to remove a contact."
-            return
-        }
         viewModelScope.launch {
+            val token = requireAccessToken() ?: run {
+                notice = "Sign in again to remove a contact."
+                return@launch
+            }
             when (val result = repository.deleteContact(token, contactId)) {
                 is ChatCall.Ok -> {
                     savedContacts = savedContacts.filterNot { it.contactId == contactId }
@@ -255,12 +259,12 @@ class ChatViewModel(
         phone: String?,
         onOpened: (String) -> Unit,
     ) {
-        val token = sessionStore.accessToken ?: run {
-            notice = "Sign in again to start a chat."
-            return
-        }
         if (connectBusy) return
         viewModelScope.launch {
+            val token = requireAccessToken() ?: run {
+                notice = "Sign in again to start a chat."
+                return@launch
+            }
             connectBusy = true
             when (val result = repository.openConversation(token, peerUserId = peerUserId, phone = phone)) {
                 is ChatCall.Ok -> {
@@ -277,8 +281,8 @@ class ChatViewModel(
     }
 
     private fun loadMessages(conversationId: String) {
-        val token = sessionStore.accessToken ?: return
         viewModelScope.launch {
+            val token = requireAccessToken() ?: return@launch
             when (val result = repository.listMessages(token, conversationId)) {
                 is ChatCall.Ok -> {
                     // API returns newest first; UI wants oldest → newest.
@@ -339,7 +343,7 @@ class ChatViewModel(
 
     private suspend fun ensureUserId() {
         if (userId.isNotBlank()) return
-        val token = sessionStore.accessToken ?: return
+        val token = requireAccessToken() ?: return
         when (val result = repository.getProfile(token)) {
             is ChatCall.Ok -> {
                 sessionStore.rememberProfile(result.value)
@@ -349,6 +353,7 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun requireAccessToken(): String? = tokens.ensureFreshAccessToken()
 }
 
 class ChatViewModelFactory(
@@ -356,10 +361,12 @@ class ChatViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
+            val bound = ApiClient.bind(sessionStore)
             @Suppress("UNCHECKED_CAST")
             return ChatViewModel(
                 sessionStore = sessionStore,
-                repository = ApiClient.chatRepository,
+                tokens = bound.tokenRefresher,
+                repository = bound.chatRepository,
                 socket = ApiClient.messengerSocket(sessionStore),
             ) as T
         }

@@ -29,7 +29,7 @@ class MessengerSocket(
     private val http: OkHttpClient,
     private val json: Json,
     private val wsUrl: String,
-    private val tokenProvider: () -> String?,
+    private val tokenProvider: suspend () -> String?,
 ) {
     private val _incoming = MutableSharedFlow<ApiMessage>(
         extraBufferCapacity = 64,

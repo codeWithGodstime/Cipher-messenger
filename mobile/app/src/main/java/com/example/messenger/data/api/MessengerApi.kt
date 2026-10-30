@@ -18,6 +18,9 @@ interface MessengerApi {
     @POST("auth/verify")
     suspend fun verify(@Body body: VerifyRequest): Response<ResponseBody>
 
+    @POST("auth/refresh")
+    suspend fun refresh(@Body body: RefreshRequest): Response<ResponseBody>
+
     @GET("me")
     suspend fun getProfile(
         @Header("Authorization") authorization: String,

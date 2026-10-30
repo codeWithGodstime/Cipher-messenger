@@ -1,5 +1,6 @@
 package com.example.messenger
 
+import com.example.messenger.data.api.TokenPair
 import com.example.messenger.data.auth.OtpCall
 import com.example.messenger.data.auth.errorMessage
 import com.example.messenger.data.auth.parseOtpSuccess
@@ -53,5 +54,23 @@ class AuthResponseTest {
             """{"error":"rate_limited","message":"Too many code requests. Try again later.","retry_after":30}""",
         )
         assertEquals("Too many code requests. Try again later. Try again in 30s.", message)
+    }
+
+    @Test
+    fun tokenPairParsesRefreshResponse() {
+        val pair = json.decodeFromString(
+            TokenPair.serializer(),
+            """
+            {
+              "access_token": "access-2",
+              "refresh_token": "refresh-2",
+              "token_type": "Bearer",
+              "expires_in": 900
+            }
+            """.trimIndent(),
+        )
+        assertEquals("access-2", pair.accessToken)
+        assertEquals("refresh-2", pair.refreshToken)
+        assertEquals(900, pair.expiresIn)
     }
 }

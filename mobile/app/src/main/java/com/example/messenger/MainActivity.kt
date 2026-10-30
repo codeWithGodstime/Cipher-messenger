@@ -4,11 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.ui.auth.AuthApp
 import com.example.messenger.ui.home.MessengerHome
@@ -22,9 +24,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             MessengerTheme {
                 val sessionStore = remember { SessionStore(applicationContext) }
+                val tokenRefresher = remember { ApiClient.bind(sessionStore).tokenRefresher }
                 var signedIn by remember { mutableStateOf(sessionStore.isLoggedIn) }
                 var displayName by remember { mutableStateOf(sessionStore.displayName) }
                 var phoneLabel by remember { mutableStateOf(sessionStore.phoneLabel) }
+
+                LaunchedEffect(tokenRefresher) {
+                    tokenRefresher.sessionLost.collect {
+                        signedIn = false
+                        displayName = ""
+                        phoneLabel = ""
+                    }
+                }
+
                 if (signedIn) {
                     MessengerHome(
                         sessionStore = sessionStore,

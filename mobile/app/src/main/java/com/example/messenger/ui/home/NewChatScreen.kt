@@ -52,8 +52,11 @@ import com.example.messenger.ui.theme.MessengerTheme
 @Composable
 fun NewChatScreen(
     contacts: List<ContactEntry>,
+    recentPeers: List<ContactEntry>,
     onBack: () -> Unit,
     onOpenPeer: (peerUserId: String) -> Unit,
+    onOpenPhone: (phoneE164: String) -> Unit,
+    onNewContact: () -> Unit,
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -61,9 +64,25 @@ fun NewChatScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val searchFocus = remember { FocusRequester() }
     val visibleContacts = contacts.filter { it.matches(query) }
+    val visiblePeers = recentPeers.filter { it.matches(query) }
     val trimmedQuery = query.trim()
+    val compactPhone = trimmedQuery.filter { !it.isWhitespace() }
+    val isE164 = compactPhone.startsWith("+") &&
+        compactPhone.drop(1).all { it.isDigit() } &&
+        compactPhone.length in 8..16
+    val looksLikePhone = isE164 ||
+        (trimmedQuery.isNotEmpty() && trimmedQuery.all { it.isDigit() || it.isWhitespace() })
     val canStartById = trimmedQuery.isNotEmpty() &&
-        visibleContacts.none { it.id.equals(trimmedQuery, ignoreCase = true) }
+        !looksLikePhone &&
+        visibleContacts.none { it.id.equals(trimmedQuery, ignoreCase = true) } &&
+        visiblePeers.none { it.id.equals(trimmedQuery, ignoreCase = true) }
+    val canStartByPhone = trimmedQuery.isNotEmpty() && looksLikePhone
+    val contactCount = contacts.size
+    val subtitle = when {
+        contactCount == 0 && recentPeers.isEmpty() -> "Add a contact or start with a phone number"
+        contactCount == 0 -> "${recentPeers.size} recent peers"
+        else -> "$contactCount contacts"
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -91,11 +110,7 @@ fun NewChatScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = if (contacts.isEmpty()) {
-                            "Start a chat with a peer user id"
-                        } else {
-                            "${contacts.size} recent peers"
-                        },
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -139,8 +154,8 @@ fun NewChatScreen(
                         iconBackground = MaterialTheme.colorScheme.secondaryContainer,
                         iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
                         title = "New contact",
-                        subtitle = "Add via QR code or phone number",
-                        onClick = { onNotice("New contacts are not connected in this build.") },
+                        subtitle = "Add by phone number",
+                        onClick = onNewContact,
                     )
                     ActionCard(
                         icon = Icons.Filled.Campaign,
@@ -156,7 +171,7 @@ fun NewChatScreen(
                 CipherSearchField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = "Search peers or paste user id",
+                    placeholder = "Search contacts, phone, or user id",
                     focusRequester = searchFocus,
                     container = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
@@ -176,15 +191,39 @@ fun NewChatScreen(
                     )
                 }
             }
+            if (canStartByPhone) {
+                item(key = "start-by-phone") {
+                    ActionCard(
+                        icon = Icons.Filled.Dialpad,
+                        iconBackground = MaterialTheme.colorScheme.secondaryContainer,
+                        iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        title = if (isE164) "Chat by phone" else "Enter full phone",
+                        subtitle = if (isE164) compactPhone else "Open new contact to pick country code",
+                        onClick = {
+                            if (isE164) onOpenPhone(compactPhone) else onNewContact()
+                        },
+                    )
+                }
+            }
             item(key = "dial") {
                 DialBanner(
-                    onDial = { onNotice("Direct dial is not connected in this build.") },
+                    onDial = onNewContact,
                     modifier = Modifier.padding(bottom = spacing.md),
                 )
             }
             if (visibleContacts.isNotEmpty()) {
+                item(key = "contacts-label") { SectionLabel("Contacts") }
+                items(visibleContacts, key = { "contact-${it.id}" }) { contact ->
+                    ContactRow(
+                        contact = contact,
+                        onClick = { onOpenPeer(contact.id) },
+                        onCall = { onNotice("Calling ${contact.name} is not connected in this build.") },
+                    )
+                }
+            }
+            if (visiblePeers.isNotEmpty()) {
                 item(key = "peers-label") { SectionLabel("Recent peers") }
-                items(visibleContacts, key = { it.id }) { contact ->
+                items(visiblePeers, key = { "peer-${it.id}" }) { contact ->
                     ContactRow(
                         contact = contact,
                         onClick = { onOpenPeer(contact.id) },
@@ -452,8 +491,11 @@ private fun NewChatPreview() {
     MessengerTheme {
         NewChatScreen(
             contacts = CipherSamples.frequent,
+            recentPeers = CipherSamples.directory,
             onBack = {},
             onOpenPeer = {},
+            onOpenPhone = {},
+            onNewContact = {},
             onNotice = {},
         )
     }

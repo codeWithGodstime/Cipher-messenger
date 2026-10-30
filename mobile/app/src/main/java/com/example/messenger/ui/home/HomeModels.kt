@@ -69,6 +69,8 @@ data class ContactEntry(
     val online: Boolean,
     val encrypted: Boolean,
     val group: Boolean = false,
+    /** Server contact row id when this entry was saved under /contacts. */
+    val contactId: String? = null,
 )
 
 fun initialsFor(name: String): String {

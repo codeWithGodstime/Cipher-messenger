@@ -1,7 +1,10 @@
 package com.example.messenger.data.chat
 
+import com.example.messenger.data.api.AddContactRequest
+import com.example.messenger.data.api.ApiContact
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
+import com.example.messenger.data.api.ContactList
 import com.example.messenger.data.api.ConversationList
 import com.example.messenger.data.api.MessageList
 import com.example.messenger.data.api.MessengerApi
@@ -41,11 +44,59 @@ class ChatRepository(
         }
     }
 
-    suspend fun openConversation(accessToken: String, peerUserId: String): ChatCall<ApiConversation> =
+    suspend fun listContacts(accessToken: String): ChatCall<List<ApiContact>> = call {
+        val response = api.listContacts(bearer(accessToken))
+        if (!response.isSuccessful) {
+            ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+        } else {
+            val body = json.decodeFromString<ContactList>(response.body()?.string().orEmpty())
+            ChatCall.Ok(body.contacts)
+        }
+    }
+
+    suspend fun addContact(
+        accessToken: String,
+        peerUserId: String? = null,
+        phone: String? = null,
+    ): ChatCall<ApiContact> = call {
+        val response = api.addContact(
+            authorization = bearer(accessToken),
+            body = AddContactRequest(userId = peerUserId, phone = phone),
+        )
+        if (!response.isSuccessful) {
+            ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+        } else {
+            ChatCall.Ok(json.decodeFromString(response.body()?.string().orEmpty()))
+        }
+    }
+
+    suspend fun deleteContact(accessToken: String, contactId: String): ChatCall<Unit> = call {
+        val response = api.deleteContact(bearer(accessToken), contactId)
+        if (!response.isSuccessful) {
+            ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+        } else {
+            ChatCall.Ok(Unit)
+        }
+    }
+
+    suspend fun lookupUser(accessToken: String, phone: String): ChatCall<Profile> = call {
+        val response = api.lookupUser(bearer(accessToken), phone)
+        if (!response.isSuccessful) {
+            ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+        } else {
+            ChatCall.Ok(json.decodeFromString(response.body()?.string().orEmpty()))
+        }
+    }
+
+    suspend fun openConversation(
+        accessToken: String,
+        peerUserId: String? = null,
+        phone: String? = null,
+    ): ChatCall<ApiConversation> =
         call {
             val response = api.openConversation(
                 authorization = bearer(accessToken),
-                body = OpenConversationRequest(peerUserId),
+                body = OpenConversationRequest(userId = peerUserId, phone = phone),
             )
             if (!response.isSuccessful) {
                 ChatCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))

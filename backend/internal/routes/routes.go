@@ -13,6 +13,7 @@ func New(
 	auth *handler.AuthHandler,
 	profile *handler.ProfileHandler,
 	chat *handler.ChatHandler,
+	contacts *handler.ContactHandler,
 	wsHandler *handler.WSHandler,
 	authenticate gin.HandlerFunc,
 ) http.Handler {
@@ -24,6 +25,10 @@ func New(
 	r.POST("/auth/logout", authenticate, auth.Logout)
 	r.GET("/me", authenticate, profile.Get)
 	r.PATCH("/me", authenticate, profile.Update)
+	r.GET("/users/lookup", authenticate, contacts.Lookup)
+	r.GET("/contacts", authenticate, contacts.List)
+	r.POST("/contacts", authenticate, contacts.Add)
+	r.DELETE("/contacts/:id", authenticate, contacts.Delete)
 	r.GET("/conversations", authenticate, chat.ListConversations)
 	r.POST("/conversations", authenticate, chat.OpenConversation)
 	r.GET("/conversations/:id/messages", authenticate, chat.ListMessages)

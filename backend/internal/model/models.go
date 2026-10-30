@@ -59,6 +59,16 @@ type Message struct {
 
 func (Message) TableName() string { return "messages" }
 
+// Contact is a saved peer for the owner. Unique per owner+peer pair.
+type Contact struct {
+	ID        string    `gorm:"primaryKey;size:36"`
+	OwnerID   string    `gorm:"size:36;not null;uniqueIndex:idx_contacts_owner_peer,priority:1;index"`
+	PeerID    string    `gorm:"size:36;not null;uniqueIndex:idx_contacts_owner_peer,priority:2"`
+	CreatedAt time.Time `gorm:"not null"`
+}
+
+func (Contact) TableName() string { return "contacts" }
+
 func NewID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

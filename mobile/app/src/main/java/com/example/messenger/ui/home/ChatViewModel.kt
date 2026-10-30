@@ -14,6 +14,7 @@ import com.example.messenger.data.chat.ChatCall
 import com.example.messenger.data.chat.ChatRepository
 import com.example.messenger.data.chat.MessengerSocket
 import com.example.messenger.data.chat.asContact
+import com.example.messenger.data.chat.asContactEntry
 import com.example.messenger.data.chat.formatChatTime
 import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
@@ -28,7 +29,13 @@ class ChatViewModel(
         private set
     var messages by mutableStateOf<Map<String, List<CipherMessage>>>(emptyMap())
         private set
+    var savedContacts by mutableStateOf<List<ContactEntry>>(emptyList())
+        private set
     var listLoading by mutableStateOf(false)
+        private set
+    var contactsLoading by mutableStateOf(false)
+        private set
+    var connectBusy by mutableStateOf(false)
         private set
     var listError by mutableStateOf<String?>(null)
         private set
@@ -42,10 +49,13 @@ class ChatViewModel(
     private val localPins = mutableMapOf<String, Boolean>()
 
     val peerContacts: List<ContactEntry>
-        get() = threads
-            .filter { it.peerId.isNotBlank() }
-            .distinctBy { it.peerId }
-            .map { it.asContact() }
+        get() {
+            val savedIds = savedContacts.map { it.id }.toSet()
+            return threads
+                .filter { it.peerId.isNotBlank() && it.peerId !in savedIds }
+                .distinctBy { it.peerId }
+                .map { it.asContact() }
+        }
 
     init {
         socket.start(viewModelScope)
@@ -64,6 +74,7 @@ class ChatViewModel(
         viewModelScope.launch {
             ensureUserId()
             refreshConversations()
+            refreshContacts()
         }
     }
 
@@ -147,6 +158,23 @@ class ChatViewModel(
         }
     }
 
+    fun refreshContacts() {
+        val token = sessionStore.accessToken ?: return
+        viewModelScope.launch {
+            contactsLoading = savedContacts.isEmpty()
+            when (val result = repository.listContacts(token)) {
+                is ChatCall.Ok -> {
+                    savedContacts = result.value.map { it.asContactEntry() }
+                    contactsLoading = false
+                }
+                is ChatCall.Failed -> {
+                    contactsLoading = false
+                    notice = result.message
+                }
+            }
+        }
+    }
+
     fun startChatWithPeer(peerUserId: String, onOpened: (String) -> Unit) {
         val peer = peerUserId.trim()
         if (peer.isEmpty()) {
@@ -157,17 +185,93 @@ class ChatViewModel(
             onOpened(existing.id)
             return
         }
+        openConversation(peerUserId = peer, phone = null, onOpened = onOpened)
+    }
+
+    fun startChatWithPhone(phoneE164: String, onOpened: (String) -> Unit) {
+        val phone = phoneE164.trim()
+        if (phone.isEmpty()) {
+            notice = "Enter a phone number to start a chat."
+            return
+        }
+        openConversation(peerUserId = null, phone = phone, onOpened = onOpened)
+    }
+
+    fun addContactByPhone(
+        phoneE164: String,
+        startChat: Boolean,
+        onOpened: (String) -> Unit,
+        onSaved: (() -> Unit)? = null,
+    ) {
+        val phone = phoneE164.trim()
+        if (phone.isEmpty()) {
+            notice = "Enter a phone number to add a contact."
+            return
+        }
+        val token = sessionStore.accessToken ?: run {
+            notice = "Sign in again to add a contact."
+            return
+        }
+        if (connectBusy) return
+        viewModelScope.launch {
+            connectBusy = true
+            when (val result = repository.addContact(token, phone = phone)) {
+                is ChatCall.Ok -> {
+                    val entry = result.value.asContactEntry()
+                    savedContacts = listOf(entry) + savedContacts.filterNot { it.id == entry.id }
+                    connectBusy = false
+                    if (startChat) {
+                        openConversation(peerUserId = entry.id, phone = null, onOpened = onOpened)
+                    } else {
+                        notice = "Added ${entry.name}."
+                        onSaved?.invoke()
+                    }
+                }
+                is ChatCall.Failed -> {
+                    connectBusy = false
+                    notice = result.message
+                }
+            }
+        }
+    }
+
+    fun removeContact(contactId: String) {
+        val token = sessionStore.accessToken ?: run {
+            notice = "Sign in again to remove a contact."
+            return
+        }
+        viewModelScope.launch {
+            when (val result = repository.deleteContact(token, contactId)) {
+                is ChatCall.Ok -> {
+                    savedContacts = savedContacts.filterNot { it.contactId == contactId }
+                }
+                is ChatCall.Failed -> notice = result.message
+            }
+        }
+    }
+
+    private fun openConversation(
+        peerUserId: String?,
+        phone: String?,
+        onOpened: (String) -> Unit,
+    ) {
         val token = sessionStore.accessToken ?: run {
             notice = "Sign in again to start a chat."
             return
         }
+        if (connectBusy) return
         viewModelScope.launch {
-            when (val result = repository.openConversation(token, peer)) {
+            connectBusy = true
+            when (val result = repository.openConversation(token, peerUserId = peerUserId, phone = phone)) {
                 is ChatCall.Ok -> {
                     upsertConversation(result.value)
+                    connectBusy = false
                     onOpened(result.value.id)
                 }
-                is ChatCall.Failed -> notice = result.message
+                is ChatCall.Failed -> {
+                    connectBusy = false
+                    notice = result.message
+                }
             }
         }
     }

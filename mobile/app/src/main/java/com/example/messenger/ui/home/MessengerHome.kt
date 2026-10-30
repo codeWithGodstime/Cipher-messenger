@@ -132,14 +132,40 @@ fun MessengerHome(
                     }
                 }
                 overlay == "new" -> NewChatScreen(
-                    contacts = viewModel.peerContacts,
+                    contacts = viewModel.savedContacts,
+                    recentPeers = viewModel.peerContacts,
                     onBack = { overlay = "none" },
                     onOpenPeer = { peerUserId ->
                         viewModel.startChatWithPeer(peerUserId) { conversationId ->
                             openChat(conversationId)
                         }
                     },
+                    onOpenPhone = { phone ->
+                        viewModel.startChatWithPhone(phone) { conversationId ->
+                            openChat(conversationId)
+                        }
+                    },
+                    onNewContact = { overlay = "contact" },
                     onNotice = ::notice,
+                )
+                overlay == "contact" -> NewContactScreen(
+                    busy = viewModel.connectBusy,
+                    onBack = { overlay = "new" },
+                    onSave = { phone ->
+                        viewModel.addContactByPhone(
+                            phoneE164 = phone,
+                            startChat = false,
+                            onOpened = {},
+                            onSaved = { overlay = "new" },
+                        )
+                    },
+                    onSaveAndChat = { phone ->
+                        viewModel.addContactByPhone(
+                            phoneE164 = phone,
+                            startChat = true,
+                            onOpened = { conversationId -> openChat(conversationId) },
+                        )
+                    },
                 )
                 tab == HomeTab.Chats -> {
                     when {

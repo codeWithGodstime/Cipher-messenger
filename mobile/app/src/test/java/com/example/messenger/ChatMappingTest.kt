@@ -1,15 +1,19 @@
 package com.example.messenger
 
+import com.example.messenger.data.api.ApiContact
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
+import com.example.messenger.data.api.OpenConversationRequest
 import com.example.messenger.data.api.Profile
 import com.example.messenger.data.api.WsEnvelope
 import com.example.messenger.data.chat.MessengerSocket
+import com.example.messenger.data.chat.asContactEntry
 import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -93,5 +97,43 @@ class ChatMappingTest {
             "wss://api.example.com/ws",
             MessengerSocket.wsUrlFromApiBase("https://api.example.com"),
         )
+    }
+
+    @Test
+    fun contactMapsPeerNameAndPhone() {
+        val contact = ApiContact(
+            id = "ct1",
+            peer = Profile(
+                id = "u2",
+                phone = "+2348012345678",
+                displayName = "Ada",
+                createdAt = "2026-01-01T00:00:00Z",
+                updatedAt = "2026-01-01T00:00:00Z",
+            ),
+            createdAt = "2026-10-30T08:00:00Z",
+        )
+        val entry = contact.asContactEntry()
+        assertEquals("u2", entry.id)
+        assertEquals("ct1", entry.contactId)
+        assertEquals("Ada", entry.name)
+        assertEquals("+2348012345678", entry.detail)
+    }
+
+    @Test
+    fun openConversationRequestOmitsNullPeerFields() {
+        val byPhone = json.encodeToString(
+            OpenConversationRequest.serializer(),
+            OpenConversationRequest(phone = "+2348012345678"),
+        )
+        assertTrue(byPhone.contains("\"phone\":\"+2348012345678\""))
+        assertFalse(byPhone.contains("user_id"))
+
+        val byId = json.encodeToString(
+            OpenConversationRequest.serializer(),
+            OpenConversationRequest(userId = "u2"),
+        )
+        assertTrue(byId.contains("\"user_id\":\"u2\""))
+        assertFalse(byId.contains("phone"))
+        assertNull(OpenConversationRequest().userId)
     }
 }

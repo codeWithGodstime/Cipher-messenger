@@ -3,6 +3,7 @@ package com.example.messenger.data.api
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
@@ -26,6 +27,29 @@ interface MessengerApi {
     suspend fun updateProfile(
         @Header("Authorization") authorization: String,
         @Body body: ProfileUpdateRequest,
+    ): Response<ResponseBody>
+
+    @GET("users/lookup")
+    suspend fun lookupUser(
+        @Header("Authorization") authorization: String,
+        @Query("phone") phone: String,
+    ): Response<ResponseBody>
+
+    @GET("contacts")
+    suspend fun listContacts(
+        @Header("Authorization") authorization: String,
+    ): Response<ResponseBody>
+
+    @POST("contacts")
+    suspend fun addContact(
+        @Header("Authorization") authorization: String,
+        @Body body: AddContactRequest,
+    ): Response<ResponseBody>
+
+    @DELETE("contacts/{id}")
+    suspend fun deleteContact(
+        @Header("Authorization") authorization: String,
+        @Path("id") contactId: String,
     ): Response<ResponseBody>
 
     @GET("conversations")

@@ -109,8 +109,39 @@ type ConversationList struct {
 }
 
 // OpenConversation is the body of POST /conversations.
+// Provide either user_id or phone (exactly one).
 type OpenConversation struct {
-	UserID string `json:"user_id" required:"true" description:"Peer user id to open or create a DM with."`
+	UserID string `json:"user_id,omitempty" description:"Peer user id to open or create a DM with."`
+	Phone  string `json:"phone,omitempty" description:"Peer phone in E.164 format."`
+}
+
+// AddContact is the body of POST /contacts.
+// Provide either user_id or phone (exactly one).
+type AddContact struct {
+	UserID string `json:"user_id,omitempty" description:"Peer user id to save."`
+	Phone  string `json:"phone,omitempty" description:"Peer phone in E.164 format."`
+}
+
+// LookupUserQuery is the query for GET /users/lookup.
+type LookupUserQuery struct {
+	Phone string `query:"phone" required:"true" description:"Phone number in E.164 format."`
+}
+
+// ContactIDPath is the path for DELETE /contacts/{id}.
+type ContactIDPath struct {
+	ID string `path:"id" required:"true" description:"Contact id."`
+}
+
+// Contact is a saved peer for the signed-in user.
+type Contact struct {
+	ID        string    `json:"id" required:"true"`
+	Peer      Profile   `json:"peer" required:"true"`
+	CreatedAt time.Time `json:"created_at" required:"true"`
+}
+
+// ContactList is the body of GET /contacts.
+type ContactList struct {
+	Contacts []Contact `json:"contacts" required:"true"`
 }
 
 // MessageList is the body of GET /conversations/{id}/messages.
@@ -211,4 +242,12 @@ func NewConversation(id string, peer Profile, last *model.Message, unread int, c
 		out.LastMessage = &msg
 	}
 	return out
+}
+
+func NewContact(id string, peer Profile, createdAt time.Time) Contact {
+	return Contact{
+		ID:        id,
+		Peer:      peer,
+		CreatedAt: createdAt,
+	}
 }

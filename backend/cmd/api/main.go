@@ -91,6 +91,9 @@ func main() {
 	messages := repository.NewMessageRepository(db)
 	chatService := service.NewChatService(users, conversations, messages, hub)
 	chat := handler.NewChatHandler(chatService)
+	contacts := handler.NewContactHandler(
+		service.NewContactService(users, repository.NewContactRepository(db)),
+	)
 	wsHandler := handler.NewWSHandler(hub, chatService, tokens, sessions)
 
 	addr := ":" + cfg.Port
@@ -102,6 +105,7 @@ func main() {
 			auth,
 			profile,
 			chat,
+			contacts,
 			wsHandler,
 			middleware.RequireAccess(tokens, sessions),
 		),

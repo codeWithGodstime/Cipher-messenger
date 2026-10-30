@@ -103,23 +103,13 @@ func (s *ChatService) ListConversations(ctx context.Context, userID string) ([]C
 	return out, nil
 }
 
-func (s *ChatService) OpenDM(ctx context.Context, userID, peerUserID string) (*ConversationSummary, error) {
-	peerUserID = strings.TrimSpace(peerUserID)
-	if peerUserID == "" {
-		return nil, apperr.Validation("user_id is required.")
-	}
-	if peerUserID == userID {
-		return nil, apperr.Validation("Cannot start a conversation with yourself.")
-	}
-	peer, err := s.users.FindByID(ctx, peerUserID)
+func (s *ChatService) OpenDM(ctx context.Context, userID, peerUserID, rawPhone string) (*ConversationSummary, error) {
+	peer, err := resolvePeer(ctx, s.users, userID, peerUserID, rawPhone)
 	if err != nil {
 		return nil, err
 	}
-	if peer == nil {
-		return nil, apperr.NotFound("User not found.")
-	}
 
-	dmKey := dmKeyFor(userID, peerUserID)
+	dmKey := dmKeyFor(userID, peer.ID)
 	existing, err := s.conversations.FindByDmKey(ctx, dmKey)
 	if err != nil {
 		return nil, err
@@ -141,7 +131,7 @@ func (s *ChatService) OpenDM(ctx context.Context, userID, peerUserID string) (*C
 	}
 	members := []model.ConversationMember{
 		{ConversationID: id, UserID: userID, CreatedAt: now},
-		{ConversationID: id, UserID: peerUserID, CreatedAt: now},
+		{ConversationID: id, UserID: peer.ID, CreatedAt: now},
 	}
 	if err := s.conversations.CreateDM(ctx, conversation, members); err != nil {
 		return nil, err

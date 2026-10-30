@@ -73,7 +73,26 @@ data class ConversationList(
 
 @Serializable
 data class OpenConversationRequest(
-    @SerialName("user_id") val userId: String,
+    @SerialName("user_id") val userId: String? = null,
+    val phone: String? = null,
+)
+
+@Serializable
+data class AddContactRequest(
+    @SerialName("user_id") val userId: String? = null,
+    val phone: String? = null,
+)
+
+@Serializable
+data class ApiContact(
+    val id: String,
+    val peer: Profile,
+    @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class ContactList(
+    val contacts: List<ApiContact>,
 )
 
 @Serializable

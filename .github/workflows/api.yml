@@ -42,23 +42,23 @@ jobs:
       - name: Build Linux binary
         working-directory: backend
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/messenger-api ./cmd/api
-      - name: Install SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
-      - name: Add server host key
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -T 10 -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
-      - name: Upload and restart
+      - name: Configure SSH
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -euo pipefail
-          scp -o IdentitiesOnly=yes /tmp/messenger-api "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/messenger-api.new"
-          ssh -o IdentitiesOnly=yes "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'EOF'
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null
+          ssh-keyscan -T 10 138.68.14.231 >> ~/.ssh/known_hosts
+      - name: Upload and restart
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            /tmp/messenger-api root@138.68.14.231:/tmp/messenger-api.new
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes root@138.68.14.231 'bash -s' <<'EOF'
           set -euo pipefail
           install -m 755 /tmp/messenger-api.new /usr/local/bin/messenger-api
           rm -f /tmp/messenger-api.new

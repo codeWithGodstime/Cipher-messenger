@@ -19,8 +19,8 @@ import (
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/routes"
 	"messenger/backend/internal/service"
-	"messenger/backend/internal/token"
 	"messenger/backend/internal/utils/httpapi"
+	"messenger/backend/internal/utils/token"
 	"messenger/backend/internal/ws"
 )
 

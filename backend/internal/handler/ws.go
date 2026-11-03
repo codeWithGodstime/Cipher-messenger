@@ -11,8 +11,8 @@ import (
 
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/service"
-	"messenger/backend/internal/token"
 	"messenger/backend/internal/utils/apperr"
+	"messenger/backend/internal/utils/token"
 	"messenger/backend/internal/ws"
 )
 

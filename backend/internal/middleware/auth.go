@@ -10,9 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"messenger/backend/internal/repository"
-	"messenger/backend/internal/token"
 	"messenger/backend/internal/utils/apperr"
 	"messenger/backend/internal/utils/httpapi"
+	"messenger/backend/internal/utils/token"
 )
 
 const (

@@ -11,9 +11,9 @@ import (
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
-	"messenger/backend/internal/token"
 	"messenger/backend/internal/utils"
 	"messenger/backend/internal/utils/apperr"
+	"messenger/backend/internal/utils/token"
 )
 
 type AuthService struct {

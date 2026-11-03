@@ -8,7 +8,7 @@ endif
 build:
 	go build -o $(BINARY) ./cmd/api
 
-# DATABASE_URL is required. PORT defaults to 8080.
+# Loads backend/.env. DATABASE_URL is required (sqlite:// locally). PORT defaults to 8080.
 start:
 	go run ./cmd/api
 

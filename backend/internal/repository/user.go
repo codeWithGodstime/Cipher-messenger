@@ -102,8 +102,8 @@ func (r *userRepository) SearchByUsername(ctx context.Context, query, excludeID 
 	err := r.conn(ctx).Raw(
 		`SELECT id, username, display_name
 		 FROM users
-		 WHERE id <> ? AND username ILIKE ? ESCAPE ?
-		 ORDER BY CASE WHEN username ILIKE ? ESCAPE ? THEN 0 ELSE 1 END, username
+		 WHERE id <> ? AND username LIKE ? ESCAPE ?
+		 ORDER BY CASE WHEN username LIKE ? ESCAPE ? THEN 0 ELSE 1 END, username
 		 LIMIT ?`,
 		excludeID, contains, `\`, prefix, `\`, limit,
 	).Scan(&users).Error
@@ -116,7 +116,8 @@ func (r *userRepository) SearchByUsername(ctx context.Context, query, excludeID 
 	return users, nil
 }
 
-// likeFragment escapes LIKE/ILIKE wildcards so the query is matched literally.
+// likeFragment escapes LIKE wildcards so the query is matched literally.
+// Usernames are stored lowercase, so LIKE matches on both SQLite and Postgres.
 func likeFragment(query string) string {
 	var b strings.Builder
 	for _, r := range query {

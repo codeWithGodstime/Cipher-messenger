@@ -161,6 +161,10 @@ type UserSearchHit struct {
 	DisplayName string `json:"display_name" required:"true" description:"May be empty when the user has not set one."`
 }
 
+type CreateIdentityKeyRequest struct {
+	PublicKey string `json:"public_key" required:"true"`
+}
+
 // Error is the JSON body of a failed request.
 type Error struct {
 	Code       string `json:"error" required:"true" description:"Stable machine-readable code."`

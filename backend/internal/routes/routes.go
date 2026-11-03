@@ -12,6 +12,7 @@ func New(
 	health *handler.HealthHandler,
 	auth *handler.AuthHandler,
 	profile *handler.ProfileHandler,
+	keys *handler.KeysHandler,
 	chat *handler.ChatHandler,
 	contacts *handler.ContactHandler,
 	wsHandler *handler.WSHandler,
@@ -21,6 +22,7 @@ func New(
 	registerHealth(r, health)
 	registerAuth(r, auth, authenticate)
 	registerProfile(r, profile, authenticate)
+	registerKeys(r, keys, authenticate)
 	registerContacts(r, contacts, authenticate)
 	registerChat(r, chat, authenticate)
 	registerWS(r, wsHandler)

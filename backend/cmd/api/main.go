@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 
 	"messenger/backend/internal/config"
 	"messenger/backend/internal/database"
@@ -34,6 +35,9 @@ func main() {
 		}
 		return
 	}
+
+	// backend/.env holds local defaults. Variables already set in the process win.
+	_ = godotenv.Load()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -73,6 +77,9 @@ func main() {
 	))
 	profileService := service.NewProfileService(users)
 	profile := handler.NewProfileHandler(profileService)
+	keys := repository.NewKeyRepository(db)
+	keyService := service.NewKeyService(keys)
+	keysHandler := handler.NewKeysHandler(keyService)
 
 	hub := ws.NewHub()
 	conversations := repository.NewConversationRepository(db)
@@ -92,6 +99,7 @@ func main() {
 			health,
 			auth,
 			profile,
+			keysHandler,
 			chat,
 			contacts,
 			wsHandler,

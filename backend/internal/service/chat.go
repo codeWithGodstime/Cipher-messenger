@@ -6,10 +6,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/utils"
+	"messenger/backend/internal/utils/apperr"
 )
 
 const (

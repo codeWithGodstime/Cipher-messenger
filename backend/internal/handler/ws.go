@@ -9,10 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
-	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/service"
 	"messenger/backend/internal/token"
+	"messenger/backend/internal/utils/apperr"
 	"messenger/backend/internal/ws"
 )
 

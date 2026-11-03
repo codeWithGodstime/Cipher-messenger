@@ -5,11 +5,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/service"
+	"messenger/backend/internal/utils/apperr"
 )
 
 type ContactHandler struct {

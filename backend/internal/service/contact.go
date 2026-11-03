@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/utils"
+	"messenger/backend/internal/utils/apperr"
 )
 
 type ContactService struct {

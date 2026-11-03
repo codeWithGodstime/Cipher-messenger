@@ -8,7 +8,6 @@ import (
 	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
-	"messenger/backend/internal/username"
 	"messenger/backend/internal/utils"
 )
 
@@ -98,7 +97,7 @@ func (s *ContactService) Delete(ctx context.Context, ownerID, contactID string) 
 }
 
 func (s *ContactService) LookupByUsername(ctx context.Context, ownerID, rawUsername string) (*model.User, error) {
-	name, err := username.Normalize(rawUsername)
+	name, err := utils.NormalizeUsername(rawUsername)
 	if err != nil {
 		return nil, apperr.InvalidUsername()
 	}
@@ -137,7 +136,7 @@ func resolvePeer(ctx context.Context, users repository.UserRepository, ownerID, 
 		}
 		return peer, nil
 	}
-	name, err := username.Normalize(rawUsername)
+	name, err := utils.NormalizeUsername(rawUsername)
 	if err != nil {
 		return nil, apperr.InvalidUsername()
 	}

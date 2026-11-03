@@ -13,7 +13,6 @@ import (
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/token"
-	"messenger/backend/internal/username"
 	"messenger/backend/internal/utils"
 )
 
@@ -51,7 +50,7 @@ type VerifyResult struct {
 
 // Login issues a session for an existing username.
 func (s *AuthService) Login(ctx context.Context, rawUsername string) (*VerifyResult, error) {
-	name, err := username.Normalize(rawUsername)
+	name, err := utils.NormalizeUsername(rawUsername)
 	if err != nil {
 		return nil, apperr.InvalidUsername()
 	}
@@ -67,7 +66,7 @@ func (s *AuthService) Login(ctx context.Context, rawUsername string) (*VerifyRes
 
 // Signup creates a new account when the username is free, then issues a session.
 func (s *AuthService) Signup(ctx context.Context, rawUsername string) (*VerifyResult, error) {
-	name, err := username.Normalize(rawUsername)
+	name, err := utils.NormalizeUsername(rawUsername)
 	if err != nil {
 		return nil, apperr.InvalidUsername()
 	}

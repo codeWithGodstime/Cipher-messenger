@@ -43,6 +43,15 @@ android {
         compose = true
         buildConfig = true
     }
+    packaging {
+        resources {
+            excludes += setOf(
+                "libsignal_jni*.dylib",
+                "signal_jni*.dll",
+                "**/libsignal_jni_testing.so",
+            )
+        }
+    }
 }
 
 private fun readApiBaseUrl(text: String): String {
@@ -89,6 +98,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.libsignal.android)
+    implementation(libs.libsignal.client)
+    coreLibraryDesugaring (libs.desugar.jdk.libs)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

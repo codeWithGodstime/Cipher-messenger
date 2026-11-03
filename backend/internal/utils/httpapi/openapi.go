@@ -11,6 +11,7 @@ import (
 	"github.com/swaggest/jsonschema-go"
 	"github.com/swaggest/openapi-go"
 	"github.com/swaggest/openapi-go/openapi31"
+	"gopkg.in/yaml.v2"
 )
 
 // WriteOpenAPI writes the OpenAPI document for this API.
@@ -19,6 +20,11 @@ func WriteOpenAPI(path string) error {
 	if err != nil {
 		return err
 	}
+	// MarshalYAML uses gopkg.in/yaml.v2, which wraps long scalars at 80 columns
+	// when the emitter width is left unset. v2.3.0 did not wrap and v2.4.0
+	// restored wrapping, so an implicit width makes this file differ between
+	// machines. FutureLineWrap pins the width to unlimited (-1).
+	yaml.FutureLineWrap()
 	data, err := spec.MarshalYAML()
 	if err != nil {
 		return fmt.Errorf("marshal openapi: %w", err)

@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/utils/apperr"
+	"messenger/backend/internal/utils/httpapi"
 )
 
 func writeError(c *gin.Context, err error) {

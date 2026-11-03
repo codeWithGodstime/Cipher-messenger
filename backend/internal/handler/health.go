@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/service"
+	"messenger/backend/internal/utils/httpapi"
 )
 
 type HealthHandler struct {

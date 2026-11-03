@@ -15,12 +15,12 @@ import (
 	"messenger/backend/internal/config"
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/handler"
-	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/routes"
 	"messenger/backend/internal/service"
 	"messenger/backend/internal/token"
+	"messenger/backend/internal/utils/httpapi"
 	"messenger/backend/internal/ws"
 )
 

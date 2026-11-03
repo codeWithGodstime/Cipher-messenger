@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"messenger/backend/internal/httpapi"
 	"messenger/backend/internal/model"
+	"messenger/backend/internal/utils/httpapi"
 )
 
 // Hub fans messages out to a user's active WebSocket connections.

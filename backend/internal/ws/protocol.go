@@ -1,6 +1,6 @@
 package ws
 
-import "messenger/backend/internal/httpapi"
+import "messenger/backend/internal/utils/httpapi"
 
 const (
 	EventMessageCreated = "message.created"

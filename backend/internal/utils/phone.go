@@ -1,4 +1,4 @@
-package phone
+package utils
 
 import (
 	"fmt"
@@ -10,8 +10,8 @@ import (
 // (7 to 15 digits total), which is the E.164 maximum.
 var e164 = regexp.MustCompile(`^\+[1-9]\d{6,14}$`)
 
-// Normalize strips visual separators and returns a canonical E.164 number.
-func Normalize(input string) (string, error) {
+// NormalizePhone strips visual separators and returns a canonical E.164 number.
+func NormalizePhone(input string) (string, error) {
 	var b strings.Builder
 	for _, r := range strings.TrimSpace(input) {
 		switch r {

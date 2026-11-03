@@ -14,6 +14,7 @@ import (
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/token"
 	"messenger/backend/internal/username"
+	"messenger/backend/internal/utils"
 )
 
 type AuthService struct {
@@ -72,7 +73,7 @@ func (s *AuthService) Signup(ctx context.Context, rawUsername string) (*VerifyRe
 	}
 	now := time.Now().UTC()
 
-	sessionID, err := model.NewID()
+	sessionID, err := utils.NewID()
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +91,7 @@ func (s *AuthService) Signup(ctx context.Context, rawUsername string) (*VerifyRe
 		if existing != nil {
 			return apperr.UsernameTaken()
 		}
-		id, err := model.NewID()
+		id, err := utils.NewID()
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ func (s *AuthService) Signup(ctx context.Context, rawUsername string) (*VerifyRe
 }
 
 func (s *AuthService) issueSession(ctx context.Context, user *model.User, created bool, now time.Time) (*VerifyResult, error) {
-	sessionID, err := model.NewID()
+	sessionID, err := utils.NewID()
 	if err != nil {
 		return nil, err
 	}

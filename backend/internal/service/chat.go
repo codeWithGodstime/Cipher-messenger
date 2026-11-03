@@ -9,6 +9,7 @@ import (
 	"messenger/backend/internal/apperr"
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
+	"messenger/backend/internal/utils"
 )
 
 const (
@@ -118,7 +119,7 @@ func (s *ChatService) OpenDM(ctx context.Context, userID, peerUserID, rawUsernam
 		return s.conversationSummary(ctx, userID, existing)
 	}
 
-	id, err := model.NewID()
+	id, err := utils.NewID()
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +165,7 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, b
 		return nil, err
 	}
 
-	id, err := model.NewID()
+	id, err := utils.NewID()
 	if err != nil {
 		return nil, err
 	}

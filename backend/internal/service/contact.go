@@ -9,6 +9,7 @@ import (
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
 	"messenger/backend/internal/username"
+	"messenger/backend/internal/utils"
 )
 
 type ContactService struct {
@@ -65,7 +66,7 @@ func (s *ContactService) Add(ctx context.Context, ownerID, peerUserID, rawUserna
 	if existing != nil {
 		return &ContactSummary{Contact: *existing, Peer: peer}, nil
 	}
-	id, err := model.NewID()
+	id, err := utils.NewID()
 	if err != nil {
 		return nil, err
 	}

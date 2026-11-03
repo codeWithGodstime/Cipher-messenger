@@ -66,3 +66,12 @@ type Contact struct {
 }
 
 func (Contact) TableName() string { return "contacts" }
+
+type IdentityKey struct {
+	ID        string    `gorm:"primaryKey;size:36"`
+	UserID    string    `gorm:"size:36;not null;index"`
+	PublicKey string    `gorm:"size:256;not null"`
+	CreatedAt time.Time `gorm:"not null"`
+}
+
+func (IdentityKey) TableName() string { return "identity_keys" }

@@ -224,7 +224,7 @@ fun ChatListScreen(
                     item(key = "empty") {
                         Text(
                             text = if (threads.isEmpty()) {
-                                "No conversations yet. Tap + to start one with a peer user id."
+                                "No conversations yet. Tap the new chat button to search by username."
                             } else {
                                 "No chats match that search."
                             },

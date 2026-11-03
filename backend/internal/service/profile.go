@@ -9,14 +9,24 @@ import (
 
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
+	"messenger/backend/internal/utils"
 	"messenger/backend/internal/utils/apperr"
 )
 
 const (
-	displayNameMax  = 64
-	aboutMax        = 139
-	profilePhotoMax = 2048
+	displayNameMax      = 64
+	aboutMax            = 139
+	profilePhotoMax     = 2048
+	usernameSearchLimit = 20
 )
+
+// UserCard is the public directory row used to start a chat.
+// It never includes phone numbers, secrets, or profile photos.
+type UserCard struct {
+	ID          string
+	Username    string
+	DisplayName string
+}
 
 type ProfileUpdate struct {
 	DisplayName  *string
@@ -30,6 +40,35 @@ type ProfileService struct {
 
 func NewProfileService(users repository.UserRepository) *ProfileService {
 	return &ProfileService{users: users}
+}
+
+// SearchUsernames returns users whose username contains the typed fragment.
+// An empty fragment returns an empty list and does not touch the database.
+// The signed-in user is excluded. At most usernameSearchLimit rows are returned.
+func (s *ProfileService) SearchUsernames(ctx context.Context, userID, rawQuery string) ([]UserCard, error) {
+	query := utils.NormalizeUserSearch(rawQuery)
+	if query == "" {
+		return []UserCard{}, nil
+	}
+	users, err := s.users.SearchByUsername(ctx, query, userID, usernameSearchLimit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UserCard, 0, len(users))
+	for _, user := range users {
+		if user.ID == "" || user.ID == userID || user.Username == "" {
+			continue
+		}
+		out = append(out, UserCard{
+			ID:          user.ID,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+		})
+		if len(out) == usernameSearchLimit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *ProfileService) Get(ctx context.Context, userID string) (*model.User, error) {

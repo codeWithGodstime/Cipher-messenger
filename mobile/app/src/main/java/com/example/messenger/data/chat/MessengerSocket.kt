@@ -31,6 +31,7 @@ class MessengerSocket(
     private val wsUrl: String,
     private val tokenProvider: suspend () -> String?,
 ) {
+    private val frameJson = Json(from = json) { explicitNulls = false }
     private val _incoming = MutableSharedFlow<ApiMessage>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
@@ -42,6 +43,12 @@ class MessengerSocket(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val errors: SharedFlow<String> = _errors.asSharedFlow()
+
+    private val _userSearch = MutableSharedFlow<UserSearchFrame>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val userSearch: SharedFlow<UserSearchFrame> = _userSearch.asSharedFlow()
 
     @Volatile
     private var socket: WebSocket? = null
@@ -86,12 +93,26 @@ class MessengerSocket(
     fun sendMessage(conversationId: String, body: String): Boolean {
         val active = socket ?: return false
         if (!connected.get()) return false
-        val payload = json.encodeToString(
+        val payload = frameJson.encodeToString(
             WsEnvelope.serializer(),
             WsEnvelope(
                 type = TYPE_MESSAGE_SEND,
                 conversationId = conversationId,
                 body = body,
+            ),
+        )
+        return active.send(payload)
+    }
+
+    fun sendUserSearch(query: String, requestId: String): Boolean {
+        val active = socket ?: return false
+        if (!connected.get()) return false
+        val payload = frameJson.encodeToString(
+            WsEnvelope.serializer(),
+            WsEnvelope(
+                type = TYPE_USER_SEARCH,
+                query = query,
+                requestId = requestId,
             ),
         )
         return active.send(payload)
@@ -148,12 +169,22 @@ class MessengerSocket(
 
     private fun handleFrame(text: String) {
         val envelope = runCatching {
-            json.decodeFromString(WsEnvelope.serializer(), text)
+            frameJson.decodeFromString(WsEnvelope.serializer(), text)
         }.getOrNull() ?: return
         when (envelope.type) {
             TYPE_MESSAGE_CREATED -> {
                 val message = envelope.message ?: return
                 _incoming.tryEmit(message)
+            }
+            TYPE_USER_SEARCH_RESULTS -> {
+                _userSearch.tryEmit(
+                    UserSearchFrame(
+                        query = envelope.query.orEmpty(),
+                        requestId = envelope.requestId.orEmpty(),
+                        users = envelope.users.orEmpty(),
+                        error = envelope.error?.takeIf { it.isNotBlank() },
+                    ),
+                )
             }
             TYPE_ERROR -> {
                 val detail = envelope.error?.takeIf { it.isNotBlank() } ?: "websocket_error"
@@ -167,6 +198,8 @@ class MessengerSocket(
     companion object {
         const val TYPE_MESSAGE_SEND = "message.send"
         const val TYPE_MESSAGE_CREATED = "message.created"
+        const val TYPE_USER_SEARCH = "user.search"
+        const val TYPE_USER_SEARCH_RESULTS = "user.search.results"
         const val TYPE_PONG = "pong"
         const val TYPE_ERROR = "error"
 

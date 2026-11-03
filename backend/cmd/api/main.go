@@ -71,7 +71,8 @@ func main() {
 		database.NewTransactor(db),
 		tokens,
 	))
-	profile := handler.NewProfileHandler(service.NewProfileService(users))
+	profileService := service.NewProfileService(users)
+	profile := handler.NewProfileHandler(profileService)
 
 	hub := ws.NewHub()
 	conversations := repository.NewConversationRepository(db)
@@ -81,7 +82,7 @@ func main() {
 	contacts := handler.NewContactHandler(
 		service.NewContactService(users, repository.NewContactRepository(db)),
 	)
-	wsHandler := handler.NewWSHandler(hub, chatService, tokens, sessions)
+	wsHandler := handler.NewWSHandler(hub, chatService, profileService, tokens, sessions)
 
 	addr := ":" + cfg.Port
 

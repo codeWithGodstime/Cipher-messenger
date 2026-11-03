@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,11 +59,18 @@ fun NewChatScreen(
     onOpenUsername: (username: String) -> Unit,
     onNewContact: () -> Unit,
     onNotice: (String) -> Unit,
+    usernameResults: List<ContactEntry> = emptyList(),
+    usernameSearchLoading: Boolean = false,
+    usernameSearchError: String? = null,
+    onUsernameQuery: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
     var query by rememberSaveable { mutableStateOf("") }
     val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        searchFocus.requestFocus()
+    }
     val visibleContacts = contacts.filter { it.matches(query) }
     val visiblePeers = recentPeers.filter { it.matches(query) }
     val trimmedQuery = query.trim()
@@ -75,6 +83,7 @@ fun NewChatScreen(
         visibleContacts.none { it.id.equals(trimmedQuery, ignoreCase = true) } &&
         visiblePeers.none { it.id.equals(trimmedQuery, ignoreCase = true) }
     val canStartByUsername = trimmedQuery.isNotEmpty() && looksLikeUsername
+    val showExactUsername = canStartByUsername && !usernameSearchLoading && usernameSearchError != null
     val contactCount = contacts.size
     val subtitle = when {
         contactCount == 0 && recentPeers.isEmpty() -> "Add a contact or start with a username"
@@ -131,12 +140,72 @@ fun NewChatScreen(
                 }
             }
         }
+        CipherSearchField(
+            value = query,
+            onValueChange = {
+                query = it
+                onUsernameQuery(it)
+            },
+            placeholder = "Search by username",
+            focusRequester = searchFocus,
+            container = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.gutter, vertical = spacing.sm),
+        )
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = spacing.gutter),
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
+            if (trimmedQuery.isNotEmpty()) {
+                item(key = "people-label") { SectionLabel("Usernames") }
+                val searchError = usernameSearchError
+                when {
+                    searchError != null -> item(key = "people-error") {
+                        Text(
+                            text = searchError,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = spacing.sm),
+                        )
+                    }
+                    usernameSearchLoading && usernameResults.isEmpty() -> item(key = "people-loading") {
+                        Text(
+                            text = "Searching…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = spacing.sm),
+                        )
+                    }
+                    usernameResults.isEmpty() -> item(key = "people-empty") {
+                        Text(
+                            text = "No usernames match.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = spacing.sm),
+                        )
+                    }
+                    else -> {
+                        if (usernameSearchLoading) {
+                            item(key = "people-refresh") {
+                                Text(
+                                    text = "Searching…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        items(usernameResults, key = { "person-${it.id}" }) { person ->
+                            UsernameHitRow(
+                                person = person,
+                                onClick = { onOpenPeer(person.id) },
+                            )
+                        }
+                    }
+                }
+            }
             item(key = "actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                     ActionCard(
@@ -165,18 +234,6 @@ fun NewChatScreen(
                     )
                 }
             }
-            item(key = "search") {
-                CipherSearchField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = "Search contacts or username",
-                    focusRequester = searchFocus,
-                    container = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = spacing.md),
-                )
-            }
             if (canStartById) {
                 item(key = "start-by-id") {
                     ActionCard(
@@ -189,7 +246,7 @@ fun NewChatScreen(
                     )
                 }
             }
-            if (canStartByUsername) {
+            if (showExactUsername) {
                 item(key = "start-by-username") {
                     ActionCard(
                         icon = Icons.Filled.Dialpad,
@@ -390,6 +447,51 @@ private fun SectionLabel(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier.padding(bottom = CipherTheme.spacing.sm, start = CipherTheme.spacing.xs),
     )
+}
+
+@Composable
+fun UsernameHitRow(
+    person: ContactEntry,
+    onClick: () -> Unit,
+) {
+    val spacing = CipherTheme.spacing
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = androidx.compose.ui.graphics.Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            CipherAvatar(
+                initials = person.initials,
+                tone = person.tone,
+                size = 48.dp,
+                contentDescription = person.name,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = person.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = person.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+            )
+        }
+    }
 }
 
 @Composable

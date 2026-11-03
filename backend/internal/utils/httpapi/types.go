@@ -150,7 +150,15 @@ type SendMessageRequest struct {
 
 // WSInfo documents the WebSocket upgrade at GET /ws.
 type WSInfo struct {
-	Protocol string `json:"protocol" required:"true" description:"JSON frames. Auth via Authorization Bearer or access_token query."`
+	Protocol string `json:"protocol" required:"true" description:"JSON frames. Auth via Authorization Bearer or access_token query. Frames do not carry a token."`
+}
+
+// UserSearchHit is one row of a user.search.results frame.
+// Only the fields needed to open a chat are included.
+type UserSearchHit struct {
+	ID          string `json:"id" required:"true"`
+	Username    string `json:"username" required:"true" description:"Username handle."`
+	DisplayName string `json:"display_name" required:"true" description:"May be empty when the user has not set one."`
 }
 
 // Error is the JSON body of a failed request.

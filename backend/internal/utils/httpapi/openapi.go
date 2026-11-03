@@ -260,8 +260,17 @@ func openAPI() (*openapi31.Spec, error) {
 		{
 			method: http.MethodGet, path: "/ws", id: "websocket",
 			summary: "Open a WebSocket",
-			description: "Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query. " +
-				"Server events: message.created. Client commands: message.send, ping. Keepalive: ping/pong.",
+			description: "Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. " +
+				"Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). " +
+				"Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), " +
+				"user.search.results (query, optional request_id, users, optional error). " +
+				"user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users with only id, username, and display_name. " +
+				"An empty or unusable query returns users []. search_failed is retryable by sending user.search again. " +
+				"Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. " +
+				"Example command: {\"type\":\"user.search\",\"query\":\"ada\",\"request_id\":\"3\"}. " +
+				"Example success: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[{\"id\":\"u2\",\"username\":\"ada\",\"display_name\":\"Ada\"}]}. " +
+				"Example empty: {\"type\":\"user.search.results\",\"query\":\"\",\"request_id\":\"4\",\"users\":[]}. " +
+				"Example failure: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[],\"error\":\"search_failed\"}.",
 			responses: []response{
 				{http.StatusSwitchingProtocols, new(WSInfo), "WebSocket upgrade accepted."},
 				failure(http.StatusUnauthorized, "Missing or invalid access token."),

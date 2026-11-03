@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -19,6 +20,10 @@ type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*model.User, error)
 	FindByID(ctx context.Context, id string) (*model.User, error)
 	FindByIDs(ctx context.Context, ids []string) ([]model.User, error)
+	// SearchByUsername returns users whose username contains query (already normalized),
+	// excluding excludeID. Prefix matches come first, then username order. At most limit rows.
+	// Only id, username, and display_name are loaded.
+	SearchByUsername(ctx context.Context, query, excludeID string, limit int) ([]model.User, error)
 	Create(ctx context.Context, user *model.User) error
 	UpdateProfile(ctx context.Context, user *model.User) error
 }
@@ -84,4 +89,42 @@ func (r *userRepository) UpdateProfile(ctx context.Context, user *model.User) er
 		"about":         user.About,
 		"profile_photo": user.ProfilePhoto,
 	}).Error
+}
+
+func (r *userRepository) SearchByUsername(ctx context.Context, query, excludeID string, limit int) ([]model.User, error) {
+	if query == "" || limit <= 0 {
+		return []model.User{}, nil
+	}
+	fragment := likeFragment(query)
+	contains := "%" + fragment + "%"
+	prefix := fragment + "%"
+	var users []model.User
+	err := r.conn(ctx).Raw(
+		`SELECT id, username, display_name
+		 FROM users
+		 WHERE id <> ? AND username ILIKE ? ESCAPE ?
+		 ORDER BY CASE WHEN username ILIKE ? ESCAPE ? THEN 0 ELSE 1 END, username
+		 LIMIT ?`,
+		excludeID, contains, `\`, prefix, `\`, limit,
+	).Scan(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	if users == nil {
+		return []model.User{}, nil
+	}
+	return users, nil
+}
+
+// likeFragment escapes LIKE/ILIKE wildcards so the query is matched literally.
+func likeFragment(query string) string {
+	var b strings.Builder
+	for _, r := range query {
+		switch r {
+		case '\\', '%', '_':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

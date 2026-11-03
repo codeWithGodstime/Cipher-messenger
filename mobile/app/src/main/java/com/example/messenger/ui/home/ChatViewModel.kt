@@ -9,18 +9,27 @@ import androidx.lifecycle.viewModelScope
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
+import com.example.messenger.data.api.WsUserHit
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatCall
 import com.example.messenger.data.chat.ChatRepository
 import com.example.messenger.data.chat.MessengerSocket
+import com.example.messenger.data.chat.UserSearchFrame
+import com.example.messenger.data.chat.acceptUserSearch
 import com.example.messenger.data.chat.asContact
 import com.example.messenger.data.chat.asContactEntry
 import com.example.messenger.data.chat.formatChatTime
+import com.example.messenger.data.chat.normalizeUsernameQuery
 import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
+import com.example.messenger.data.chat.toneFor
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 class ChatViewModel(
     private val sessionStore: SessionStore,
@@ -49,8 +58,21 @@ class ChatViewModel(
         private set
     var loggingOut by mutableStateOf(false)
         private set
+    var usernameResults by mutableStateOf<List<ContactEntry>>(emptyList())
+        private set
+    var usernameSearchLoading by mutableStateOf(false)
+        private set
+    var usernameSearchError by mutableStateOf<String?>(null)
+        private set
 
     private var userId: String = sessionStore.userId.orEmpty()
+    private val usernameQueries = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    private var pendingUsernameQuery = ""
+    private var searchGeneration = 0
+    private var latestSearchId = ""
     private val loadedConversations = mutableSetOf<String>()
     private val localPins = mutableMapOf<String, Boolean>()
 
@@ -68,6 +90,24 @@ class ChatViewModel(
         socket.start(viewModelScope)
         viewModelScope.launch {
             socket.incoming.collect(::onIncomingMessage)
+        }
+        viewModelScope.launch {
+            socket.userSearch.collect(::onUserSearch)
+        }
+        viewModelScope.launch {
+            usernameQueries.debounce(300.milliseconds).collect { query ->
+                if (query != pendingUsernameQuery) return@collect
+                val id = nextSearchId()
+                latestSearchId = id
+                usernameResults = emptyList()
+                usernameSearchError = null
+                usernameSearchLoading = true
+                if (!socket.sendUserSearch(query, id)) {
+                    if (latestSearchId != id) return@collect
+                    usernameSearchLoading = false
+                    usernameSearchError = "Can't search right now. Check your connection."
+                }
+            }
         }
         viewModelScope.launch {
             socket.errors.collect { code ->
@@ -177,6 +217,32 @@ class ChatViewModel(
                 thread
             }
         }
+    }
+
+    fun onUsernameQuery(raw: String) {
+        val query = normalizeUsernameQuery(raw)
+        pendingUsernameQuery = query
+        if (query.isEmpty()) {
+            val id = nextSearchId()
+            latestSearchId = id
+            usernameResults = emptyList()
+            usernameSearchLoading = false
+            usernameSearchError = null
+            socket.sendUserSearch("", id)
+            return
+        }
+        usernameResults = emptyList()
+        usernameSearchLoading = true
+        usernameSearchError = null
+        usernameQueries.tryEmit(query)
+    }
+
+    fun clearUsernameSearch() {
+        pendingUsernameQuery = ""
+        latestSearchId = ""
+        usernameResults = emptyList()
+        usernameSearchLoading = false
+        usernameSearchError = null
     }
 
     fun refreshContacts() {
@@ -356,6 +422,41 @@ class ChatViewModel(
             val pinned = localPins[thread.id] ?: thread.pinned
             thread.copy(pinned = pinned)
         }
+    }
+
+    private fun nextSearchId(): String = (++searchGeneration).toString()
+
+    private fun onUserSearch(frame: UserSearchFrame) {
+        if (!acceptUserSearch(frame.requestId, latestSearchId)) return
+        if (frame.query != pendingUsernameQuery) return
+        usernameSearchLoading = false
+        val code = frame.error
+        if (!code.isNullOrBlank()) {
+            usernameResults = emptyList()
+            usernameSearchError = usernameSearchMessage(code)
+            return
+        }
+        usernameSearchError = null
+        usernameResults = frame.users.map { it.asPerson() }
+    }
+
+    private fun WsUserHit.asPerson(): ContactEntry {
+        val name = displayName.ifBlank { username }.ifBlank { "User" }
+        return ContactEntry(
+            id = id,
+            name = name,
+            initials = initialsFor(name),
+            tone = toneFor(id),
+            detail = "@$username",
+            online = false,
+            encrypted = true,
+        )
+    }
+
+    private fun usernameSearchMessage(code: String): String = when (code) {
+        "search_failed" -> "Couldn't search usernames. Try again."
+        "validation_error" -> "That search isn't valid."
+        else -> "Couldn't search usernames."
     }
 
     private suspend fun ensureUserId() {

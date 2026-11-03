@@ -111,10 +111,20 @@ data class SendMessageRequest(
 )
 
 @Serializable
+data class WsUserHit(
+    val id: String,
+    val username: String,
+    @SerialName("display_name") val displayName: String = "",
+)
+
+@Serializable
 data class WsEnvelope(
     val type: String,
     @SerialName("conversation_id") val conversationId: String? = null,
     val body: String? = null,
     val message: ApiMessage? = null,
     val error: String? = null,
+    val query: String? = null,
+    @SerialName("request_id") val requestId: String? = null,
+    val users: List<WsUserHit>? = null,
 )

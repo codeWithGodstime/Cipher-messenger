@@ -67,10 +67,14 @@ fun MessengerHome(
 
     fun popOverlay() {
         when {
-            overlay == "contact" -> overlay = "new"
+            overlay == "contact" -> {
+                viewModel.clearUsernameSearch()
+                overlay = "new"
+            }
             overlay == "new" || overlay.startsWith("chat:") -> {
                 overlay = "none"
                 viewModel.leaveConversation()
+                viewModel.clearUsernameSearch()
             }
         }
     }
@@ -149,7 +153,10 @@ fun MessengerHome(
                 overlay == "new" -> NewChatScreen(
                     contacts = viewModel.savedContacts,
                     recentPeers = viewModel.peerContacts,
-                    onBack = { overlay = "none" },
+                    onBack = {
+                        viewModel.clearUsernameSearch()
+                        overlay = "none"
+                    },
                     onOpenPeer = { peerUserId ->
                         viewModel.startChatWithPeer(peerUserId) { conversationId ->
                             openChat(conversationId)
@@ -160,12 +167,31 @@ fun MessengerHome(
                             openChat(conversationId)
                         }
                     },
-                    onNewContact = { overlay = "contact" },
+                    usernameResults = viewModel.usernameResults,
+                    usernameSearchLoading = viewModel.usernameSearchLoading,
+                    usernameSearchError = viewModel.usernameSearchError,
+                    onUsernameQuery = viewModel::onUsernameQuery,
+                    onNewContact = {
+                        viewModel.clearUsernameSearch()
+                        overlay = "contact"
+                    },
                     onNotice = ::notice,
                 )
                 overlay == "contact" -> NewContactScreen(
                     busy = viewModel.connectBusy,
-                    onBack = { overlay = "new" },
+                    onBack = {
+                        viewModel.clearUsernameSearch()
+                        overlay = "new"
+                    },
+                    usernameResults = viewModel.usernameResults,
+                    usernameSearchLoading = viewModel.usernameSearchLoading,
+                    usernameSearchError = viewModel.usernameSearchError,
+                    onUsernameQuery = viewModel::onUsernameQuery,
+                    onPickUser = { userId ->
+                        viewModel.startChatWithPeer(userId) { conversationId ->
+                            openChat(conversationId)
+                        }
+                    },
                     onSave = { username ->
                         viewModel.addContactByUsername(
                             rawUsername = username,
@@ -195,7 +221,10 @@ fun MessengerHome(
                         else -> ChatListScreen(
                             threads = viewModel.threads,
                             onOpenChat = ::openChat,
-                            onNewChat = { overlay = "new" },
+                            onNewChat = {
+                                viewModel.clearUsernameSearch()
+                                overlay = "new"
+                            },
                         )
                     }
                 }

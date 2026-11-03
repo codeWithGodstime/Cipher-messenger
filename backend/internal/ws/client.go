@@ -9,6 +9,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"messenger/backend/internal/service"
+	"messenger/backend/internal/utils"
+	"messenger/backend/internal/utils/httpapi"
 )
 
 const (
@@ -20,20 +22,22 @@ const (
 )
 
 type Client struct {
-	hub    *Hub
-	userID string
-	chat   *service.ChatService
-	conn   *websocket.Conn
-	send   chan []byte
+	hub      *Hub
+	userID   string
+	chat     *service.ChatService
+	profiles *service.ProfileService
+	conn     *websocket.Conn
+	send     chan []byte
 }
 
-func NewClient(hub *Hub, userID string, chat *service.ChatService, conn *websocket.Conn) *Client {
+func NewClient(hub *Hub, userID string, chat *service.ChatService, profiles *service.ProfileService, conn *websocket.Conn) *Client {
 	return &Client{
-		hub:    hub,
-		userID: userID,
-		chat:   chat,
-		conn:   conn,
-		send:   make(chan []byte, sendBuffer),
+		hub:      hub,
+		userID:   userID,
+		chat:     chat,
+		profiles: profiles,
+		conn:     conn,
+		send:     make(chan []byte, sendBuffer),
 	}
 }
 
@@ -121,9 +125,43 @@ func (c *Client) handle(data []byte) {
 			return
 		}
 		// Delivery is via PublishMessage (message.created) to all members including sender.
+	case CommandUserSearch:
+		c.searchUsers(env)
 	default:
 		c.sendError("unknown_type")
 	}
+}
+
+func (c *Client) searchUsers(env Envelope) {
+	query := utils.NormalizeUserSearch(env.Query)
+	requestID := cleanRequestID(env.RequestID)
+	if c.profiles == nil {
+		c.sendSearch(query, requestID, searchFailed, nil)
+		return
+	}
+	cards, err := c.profiles.SearchUsernames(context.Background(), c.userID, query)
+	if err != nil {
+		log.Printf("ws user search: %v", err)
+		c.sendSearch(query, requestID, searchFailed, nil)
+		return
+	}
+	hits := make([]httpapi.UserSearchHit, 0, len(cards))
+	for _, card := range cards {
+		hits = append(hits, httpapi.UserSearchHit{
+			ID:          card.ID,
+			Username:    card.Username,
+			DisplayName: card.DisplayName,
+		})
+	}
+	c.sendSearch(query, requestID, "", hits)
+}
+
+func (c *Client) sendSearch(query, requestID, errCode string, users []httpapi.UserSearchHit) {
+	payload, err := MarshalUserSearchResults(query, requestID, errCode, users)
+	if err != nil {
+		return
+	}
+	c.Send(payload)
 }
 
 func (c *Client) sendError(code string) {

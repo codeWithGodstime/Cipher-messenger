@@ -8,11 +8,11 @@ import (
 	"messenger/backend/internal/model"
 )
 
-// Migrate creates the auth, profile, chat, and contact tables. The project has
-// no migration tool; AutoMigrate matches the GORM connection already used by
-// this package. OTP codes live in Redis, so a leftover otp_challenges table
-// is dropped on startup. Early installs keyed users by phone; that column is
-// renamed to username when present.
+// Migrate creates the auth, profile, chat, contact, and identity-key tables.
+// The project has no migration tool; AutoMigrate matches the GORM connection
+// already used by this package. OTP codes live in Redis, so a leftover
+// otp_challenges table is dropped on startup. Early installs keyed users by
+// phone; that column is renamed to username when present.
 func Migrate(db *gorm.DB) error {
 	if db.Migrator().HasTable("otp_challenges") {
 		if err := db.Migrator().DropTable("otp_challenges"); err != nil {
@@ -35,6 +35,7 @@ func Migrate(db *gorm.DB) error {
 		&model.ConversationMember{},
 		&model.Message{},
 		&model.Contact{},
+		&model.IdentityKey{},
 	); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}

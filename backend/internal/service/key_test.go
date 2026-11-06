@@ -40,6 +40,9 @@ func TestOneTimePreKeysAppendAndRefill(t *testing.T) {
 	if err := svc.UploadSignedPreKey(ctx, user.ID, 1, testKey(2), testSignature()); err != nil {
 		t.Fatalf("signed prekey: %v", err)
 	}
+	if err := svc.UploadKyberPreKey(ctx, user.ID, 1, testKyber(), testSignature()); err != nil {
+		t.Fatalf("kyber prekey: %v", err)
+	}
 
 	first := []OneTimePreKeyInput{{KeyID: 1, PublicKey: testKey(3)}, {KeyID: 2, PublicKey: testKey(4)}}
 	if err := svc.UploadOneTimePreKeys(ctx, user.ID, first); err != nil {
@@ -67,7 +70,7 @@ func TestOneTimePreKeysAppendAndRefill(t *testing.T) {
 		t.Fatalf("count = %d, want 3 when the same public keys are uploaded again", count)
 	}
 
-	_, _, claimed, err := svc.GetPreKeyBundle(ctx, user.ID)
+	_, _, _, claimed, err := svc.GetPreKeyBundle(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -153,4 +156,8 @@ func testKey(fill byte) string {
 
 func testSignature() string {
 	return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 64))
+}
+
+func testKyber() string {
+	return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 1569))
 }

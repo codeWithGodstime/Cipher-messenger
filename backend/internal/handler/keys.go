@@ -59,12 +59,31 @@ func (h *KeysHandler) GetPreKeyBundle(c *gin.Context) {
 		writeError(c, apperr.Unauthorized())
 		return
 	}
-	identity, signed, oneTime, err := h.keyService.GetPreKeyBundle(c.Request.Context(), c.Param("user_id"))
+	identity, signed, kyber, oneTime, err := h.keyService.GetPreKeyBundle(c.Request.Context(), c.Param("user_id"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, httpapi.NewPreKeyBundle(identity, signed, oneTime))
+	c.JSON(http.StatusOK, httpapi.NewPreKeyBundle(identity, signed, kyber, oneTime))
+}
+
+func (h *KeysHandler) UploadKyberPreKey(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, apperr.Unauthorized())
+		return
+	}
+	var req httpapi.UploadKyberPreKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, apperr.InvalidBody())
+		return
+	}
+	err := h.keyService.UploadKyberPreKey(c.Request.Context(), userID, req.KeyID, req.PublicKey, req.Signature)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *KeysHandler) UploadSignedPreKey(c *gin.Context) {

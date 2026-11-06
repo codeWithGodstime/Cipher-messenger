@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"messenger/backend/internal/model"
 	"messenger/backend/internal/repository"
@@ -13,7 +12,6 @@ import (
 )
 
 const (
-	maxMessageBody  = 4000
 	defaultMsgLimit = 50
 	maxMsgLimit     = 100
 )
@@ -157,9 +155,6 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, b
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return nil, apperr.Validation("body is required.")
-	}
-	if utf8.RuneCountInString(body) > maxMessageBody {
-		return nil, apperr.Validation("body must be at most 4000 characters.")
 	}
 	if err := s.requireMember(ctx, conversationID, userID); err != nil {
 		return nil, err

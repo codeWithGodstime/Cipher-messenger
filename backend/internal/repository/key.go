@@ -15,6 +15,7 @@ type KeyRepository interface {
 	CreateIdentityKey(ctx context.Context, key *model.IdentityKey) error
 	GetIdentityKey(ctx context.Context, userID string) (*model.IdentityKey, error)
 	SaveSignedPreKey(ctx context.Context, key *model.SignedPreKey) error
+	SaveKyberPreKey(ctx context.Context, key *model.KyberPreKey) error
 	// CountOneTimePreKeys is how many one-time prekeys this user still has stored.
 	CountOneTimePreKeys(ctx context.Context, userID string) (int, error)
 	// AppendOneTimePreKeys adds keys to the user's pool and leaves stored keys in place.
@@ -22,14 +23,14 @@ type KeyRepository interface {
 	// a key_id is stored with a different public key. ErrPreKeyLimit means the new
 	// keys would grow the pool past MaxStoredOneTimePreKeys. Neither failure writes.
 	AppendOneTimePreKeys(ctx context.Context, userID string, keys []model.OneTimePreKey) error
-	// TakePreKeyBundle reads the identity key and signed prekey and removes one
-	// one-time prekey. The one-time prekey is nil when the user has none left.
-	// Identity or signed is nil when that row is missing, and no one-time prekey
-	// is removed in that case.
-	TakePreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.OneTimePreKey, error)
-	// ListPeerPublicKeys returns identity and signed prekeys for the given users.
+	// TakePreKeyBundle reads the identity key, signed prekey, and Kyber prekey,
+	// and removes one one-time prekey. The one-time prekey is nil when the user
+	// has none left. Identity, signed, or Kyber is nil when that row is missing,
+	// and no one-time prekey is removed in that case.
+	TakePreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.KyberPreKey, *model.OneTimePreKey, error)
+	// ListPeerPublicKeys returns identity, signed, and Kyber prekeys for the given users.
 	// It does not remove one-time prekeys. Missing users are absent from the maps.
-	ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, error)
+	ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, map[string]model.KyberPreKey, error)
 }
 
 type keyRepository struct {
@@ -87,12 +88,31 @@ func (r *keyRepository) SaveSignedPreKey(ctx context.Context, key *model.SignedP
 	return r.conn(ctx).Create(key).Error
 }
 
+func (r *keyRepository) SaveKyberPreKey(ctx context.Context, key *model.KyberPreKey) error {
+	// One Kyber prekey per user. A later upload from the same account replaces it.
+	var existing model.KyberPreKey
+	err := r.conn(ctx).Where("user_id = ?", key.UserID).First(&existing).Error
+	if err == nil {
+		return r.conn(ctx).Model(&existing).Updates(map[string]any{
+			"key_id":     key.KeyID,
+			"public_key": key.PublicKey,
+			"signature":  key.Signature,
+			"created_at": key.CreatedAt,
+		}).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return r.conn(ctx).Create(key).Error
+}
+
 // TakePreKeyBundle loads the keys a peer needs to open a Signal session.
 // The one-time prekey is deleted in the same transaction so two callers cannot
 // receive it. Postgres locks the chosen row; SQLite serializes writers.
-func (r *keyRepository) TakePreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.OneTimePreKey, error) {
+func (r *keyRepository) TakePreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.KyberPreKey, *model.OneTimePreKey, error) {
 	var identity *model.IdentityKey
 	var signed *model.SignedPreKey
+	var kyber *model.KyberPreKey
 	var oneTime *model.OneTimePreKey
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		var idKey model.IdentityKey
@@ -115,6 +135,16 @@ func (r *keyRepository) TakePreKeyBundle(ctx context.Context, userID string) (*m
 		}
 		signed = &signedKey
 
+		var kyberKey model.KyberPreKey
+		err = tx.Where("user_id = ?", userID).First(&kyberKey).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		kyber = &kyberKey
+
 		claimed, err := claimOneTimePreKey(tx, userID)
 		if err != nil {
 			return err
@@ -123,25 +153,30 @@ func (r *keyRepository) TakePreKeyBundle(ctx context.Context, userID string) (*m
 		return nil
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return identity, signed, oneTime, nil
+	return identity, signed, kyber, oneTime, nil
 }
 
 // ListPeerPublicKeys loads reusable public keys. One-time prekeys stay in the pool.
-func (r *keyRepository) ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, error) {
+func (r *keyRepository) ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, map[string]model.KyberPreKey, error) {
 	identities := map[string]model.IdentityKey{}
 	signed := map[string]model.SignedPreKey{}
+	kyber := map[string]model.KyberPreKey{}
 	if len(userIDs) == 0 {
-		return identities, signed, nil
+		return identities, signed, kyber, nil
 	}
 	var identityRows []model.IdentityKey
 	if err := r.conn(ctx).Where("user_id IN ?", userIDs).Find(&identityRows).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var signedRows []model.SignedPreKey
 	if err := r.conn(ctx).Where("user_id IN ?", userIDs).Find(&signedRows).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	var kyberRows []model.KyberPreKey
+	if err := r.conn(ctx).Where("user_id IN ?", userIDs).Find(&kyberRows).Error; err != nil {
+		return nil, nil, nil, err
 	}
 	for _, row := range identityRows {
 		identities[row.UserID] = row
@@ -149,7 +184,10 @@ func (r *keyRepository) ListPeerPublicKeys(ctx context.Context, userIDs []string
 	for _, row := range signedRows {
 		signed[row.UserID] = row
 	}
-	return identities, signed, nil
+	for _, row := range kyberRows {
+		kyber[row.UserID] = row
+	}
+	return identities, signed, kyber, nil
 }
 
 // claimOneTimePreKey removes the oldest one-time prekey for the user.

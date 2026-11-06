@@ -51,7 +51,7 @@ type Message struct {
 	ID             string    `gorm:"primaryKey;size:36"`
 	ConversationID string    `gorm:"size:36;not null;index:idx_messages_conversation_created,priority:1"`
 	SenderID       string    `gorm:"size:36;not null;index"`
-	Body           string    `gorm:"size:4000;not null"`
+	Body           string    `gorm:"type:text;not null"`
 	CreatedAt      time.Time `gorm:"not null;index:idx_messages_conversation_created,priority:2"`
 }
 
@@ -96,6 +96,19 @@ type SignedPreKey struct {
 }
 
 func (SignedPreKey) TableName() string { return "signed_prekeys" }
+
+// KyberPreKey is the account's current libsignal last-resort Kyber1024 prekey.
+// One row per user; a later upload replaces it. Sessions require this key.
+type KyberPreKey struct {
+	ID        string    `gorm:"primaryKey;size:36"`
+	UserID    string    `gorm:"size:36;not null;uniqueIndex"`
+	KeyID     int       `gorm:"not null"`
+	PublicKey string    `gorm:"size:4096;not null"`
+	Signature string    `gorm:"size:256;not null"`
+	CreatedAt time.Time `gorm:"not null"`
+}
+
+func (KyberPreKey) TableName() string { return "kyber_prekeys" }
 
 // OneTimePreKey is one libsignal one-time prekey. Uploads add keys.
 // An account holds at most MaxStoredOneTimePreKeys rows. A claim deletes one.

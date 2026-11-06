@@ -206,6 +206,20 @@ func openAPI() (*openapi31.Spec, error) {
 			},
 		},
 		{
+			method: http.MethodPost, path: "/keys/kyber-prekey", id: "uploadKyberPreKey",
+			summary:     "Upload a Kyber prekey",
+			description: "Stores the signed-in user's current libsignal Kyber1024 prekey. Uploading again replaces it. Recipients need this key, with the identity key and signed prekey, to start a session.",
+			auth:        true,
+			request:     new(UploadKyberPreKeyRequest),
+			bodyOnly:    true,
+			responses: []response{
+				{http.StatusNoContent, new(struct{}), "The Kyber prekey was stored."},
+				failure(http.StatusBadRequest, "The JSON body, key_id, public_key, or signature is invalid."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
 			method: http.MethodGet, path: "/keys/one-time-prekeys", id: "oneTimePreKeyCount",
 			summary:     "Count remaining one-time prekeys",
 			description: "Returns how many one-time prekeys are still stored for the signed-in user. The client uploads more when this count is below 10. The response does not include the keys.",
@@ -234,14 +248,14 @@ func openAPI() (*openapi31.Spec, error) {
 		{
 			method: http.MethodPost, path: "/keys/{user_id}/bundle", id: "claimPreKeyBundle",
 			summary:     "Claim a prekey bundle",
-			description: "Returns another user's identity public key, current signed prekey, and one one-time prekey so the caller can start a Signal session. The one-time prekey is removed from that user's pool and is omitted when none remain. A session can still start from the identity key and signed prekey. This is not a read: repeating the call claims another one-time prekey.",
+			description: "Returns another user's identity public key, signed prekey, Kyber prekey, and one one-time prekey so the caller can start a Signal session. The one-time prekey is removed from that user's pool and is omitted when none remain. A session can still start from the identity key, signed prekey, and Kyber prekey. This is not a read: repeating the call claims another one-time prekey.",
 			auth:        true,
 			request:     new(PreKeyBundlePath),
 			responses: []response{
-				{http.StatusOK, new(PreKeyBundle), "Identity key, signed prekey, and at most one one-time prekey."},
+				{http.StatusOK, new(PreKeyBundle), "Identity key, signed prekey, Kyber prekey, and at most one one-time prekey."},
 				failure(http.StatusBadRequest, "user_id is missing."),
 				failure(http.StatusUnauthorized, "Missing or invalid access token."),
-				failure(http.StatusNotFound, "User does not exist, or has not published an identity key and signed prekey."),
+				failure(http.StatusNotFound, "User does not exist, or has not published an identity key, signed prekey, and Kyber prekey."),
 				failure(http.StatusInternalServerError, "Unexpected failure."),
 			},
 		},
@@ -351,12 +365,12 @@ func openAPI() (*openapi31.Spec, error) {
 				"Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), " +
 				"user.search.results (query, optional request_id, users, optional error). " +
 				"user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users. " +
-				"Each user has id, username, and display_name. When that user has published both an identity key and a signed prekey, the hit also includes identity_key and signed_pre_key so the client can message them. Both fields are omitted until both keys exist. " +
-				"A one-time prekey is not included; POST /keys/{user_id}/bundle claims one when the chat is opened. " +
+				"Each user has id, username, and display_name. When that user has published an identity key, a signed prekey, and a Kyber prekey, the hit also includes identity_key, signed_pre_key, and kyber_pre_key. All three are omitted until all three exist. " +
+				"A one-time prekey is not included; POST /keys/{user_id}/bundle claims one when a session is started. " +
 				"An empty or unusable query returns users []. search_failed is retryable by sending user.search again. " +
 				"Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. " +
 				"Example command: {\"type\":\"user.search\",\"query\":\"ada\",\"request_id\":\"3\"}. " +
-				"Example success: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[{\"id\":\"u2\",\"username\":\"ada\",\"display_name\":\"Ada\",\"identity_key\":\"AQID\",\"signed_pre_key\":{\"key_id\":1,\"public_key\":\"AQID\",\"signature\":\"AQID\"}}]}. " +
+				"Example success: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[{\"id\":\"u2\",\"username\":\"ada\",\"display_name\":\"Ada\",\"identity_key\":\"AQID\",\"signed_pre_key\":{\"key_id\":1,\"public_key\":\"AQID\",\"signature\":\"AQID\"},\"kyber_pre_key\":{\"key_id\":1,\"public_key\":\"AQID\",\"signature\":\"AQID\"}}]}. " +
 				"Example empty: {\"type\":\"user.search.results\",\"query\":\"\",\"request_id\":\"4\",\"users\":[]}. " +
 				"Example failure: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[],\"error\":\"search_failed\"}.",
 			responses: []response{

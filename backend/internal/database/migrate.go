@@ -37,9 +37,29 @@ func Migrate(db *gorm.DB) error {
 		&model.Contact{},
 		&model.IdentityKey{},
 		&model.SignedPreKey{},
+		&model.KyberPreKey{},
 		&model.OneTimePreKey{},
 	); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := messageBodyAsText(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// messageBodyAsText stores messages.body as text. AutoMigrate leaves an
+// existing Postgres varchar column unchanged, so the type is altered here.
+// SQLite already stores strings as text.
+func messageBodyAsText(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	if !db.Migrator().HasTable(&model.Message{}) {
+		return nil
+	}
+	if err := db.Exec(`ALTER TABLE messages ALTER COLUMN body TYPE text`).Error; err != nil {
+		return fmt.Errorf("messages.body as text: %w", err)
 	}
 	return nil
 }

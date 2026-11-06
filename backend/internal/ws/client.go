@@ -155,7 +155,7 @@ func (c *Client) searchUsers(env Envelope) {
 	for _, card := range cards {
 		ids = append(ids, card.ID)
 	}
-	identities, signedKeys, err := c.keys.ListPeerPublicKeys(context.Background(), ids)
+	identities, signedKeys, kyberKeys, err := c.keys.ListPeerPublicKeys(context.Background(), ids)
 	if err != nil {
 		log.Printf("ws user search keys: %v", err)
 		c.sendSearch(query, requestID, searchFailed, nil)
@@ -170,12 +170,18 @@ func (c *Client) searchUsers(env Envelope) {
 		}
 		identity, hasIdentity := identities[card.ID]
 		signed, hasSigned := signedKeys[card.ID]
-		if hasIdentity && hasSigned {
+		kyber, hasKyber := kyberKeys[card.ID]
+		if hasIdentity && hasSigned && hasKyber {
 			hit.IdentityKey = identity.PublicKey
 			hit.SignedPreKey = &httpapi.SignedPreKey{
 				KeyID:     signed.KeyID,
 				PublicKey: signed.PublicKey,
 				Signature: signed.Signature,
+			}
+			hit.KyberPreKey = &httpapi.KyberPreKey{
+				KeyID:     kyber.KeyID,
+				PublicKey: kyber.PublicKey,
+				Signature: kyber.Signature,
 			}
 		}
 		hits = append(hits, hit)

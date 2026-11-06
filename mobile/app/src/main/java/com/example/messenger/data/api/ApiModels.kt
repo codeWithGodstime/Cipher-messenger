@@ -123,6 +123,13 @@ data class UploadSignedPreKeyRequest(
 )
 
 @Serializable
+data class UploadKyberPreKeyRequest(
+    @SerialName("key_id") val keyId: Int,
+    @SerialName("public_key") val publicKey: String,
+    val signature: String,
+)
+
+@Serializable
 data class OneTimePreKeyRequest(
     @SerialName("key_id") val keyId: Int,
     @SerialName("public_key") val publicKey: String,
@@ -150,9 +157,17 @@ data class SignedPreKey(
  * [preKey] is absent when that user has no one-time prekeys left.
  */
 @Serializable
+data class KyberPreKey(
+    @SerialName("key_id") val keyId: Int,
+    @SerialName("public_key") val publicKey: String,
+    val signature: String,
+)
+
+@Serializable
 data class PreKeyBundle(
     @SerialName("identity_key") val identityKey: String,
     @SerialName("signed_pre_key") val signedPreKey: SignedPreKey,
+    @SerialName("kyber_pre_key") val kyberPreKey: KyberPreKey,
     @SerialName("pre_key") val preKey: OneTimePreKeyRequest? = null,
 )
 
@@ -163,6 +178,7 @@ data class WsUserHit(
     @SerialName("display_name") val displayName: String = "",
     @SerialName("identity_key") val identityKey: String? = null,
     @SerialName("signed_pre_key") val signedPreKey: SignedPreKey? = null,
+    @SerialName("kyber_pre_key") val kyberPreKey: KyberPreKey? = null,
 )
 
 @Serializable

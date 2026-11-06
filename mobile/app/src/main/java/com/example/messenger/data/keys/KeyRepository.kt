@@ -5,6 +5,7 @@ import com.example.messenger.data.api.MessengerApi
 import com.example.messenger.data.api.OneTimePreKeyCount
 import com.example.messenger.data.api.OneTimePreKeyRequest
 import com.example.messenger.data.api.PreKeyBundle
+import com.example.messenger.data.api.UploadKyberPreKeyRequest
 import com.example.messenger.data.api.UploadOneTimePreKeysRequest
 import com.example.messenger.data.api.UploadSignedPreKeyRequest
 import com.example.messenger.data.auth.errorMessage
@@ -52,6 +53,24 @@ class KeyRepository(
             api.uploadSignedPreKey(
                 authorization = bearer(accessToken),
                 body = UploadSignedPreKeyRequest(
+                    keyId = keyId,
+                    publicKey = publicKey,
+                    signature = signature,
+                ),
+            )
+        }
+    }
+
+    suspend fun publishKyberPreKey(
+        accessToken: String,
+        keyId: Int,
+        publicKey: String,
+        signature: String,
+    ): KeyCall {
+        return publish {
+            api.uploadKyberPreKey(
+                authorization = bearer(accessToken),
+                body = UploadKyberPreKeyRequest(
                     keyId = keyId,
                     publicKey = publicKey,
                     signature = signature,

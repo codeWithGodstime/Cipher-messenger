@@ -7,17 +7,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.content.Context
+import android.util.Log
+import com.example.messenger.crypto.DeviceProtocolStore
+import com.example.messenger.crypto.IdentityStore
 import com.example.messenger.crypto.LocalPreKeyStore
+import com.example.messenger.crypto.MessageCipher
+import com.example.messenger.crypto.SentPlaintextStore
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
-import com.example.messenger.data.api.PreKeyBundle
 import com.example.messenger.data.api.WsUserHit
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatCall
+import com.example.messenger.data.chat.ChatCrypto
 import com.example.messenger.data.chat.ChatRepository
+import com.example.messenger.data.chat.CryptoCall
 import com.example.messenger.data.chat.MessengerSocket
 import com.example.messenger.data.chat.UserSearchFrame
 import com.example.messenger.data.chat.acceptUserSearch
@@ -28,9 +34,9 @@ import com.example.messenger.data.chat.normalizeUsernameQuery
 import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
 import com.example.messenger.data.chat.toneFor
-import com.example.messenger.data.keys.KeyRepository
+import com.example.messenger.data.keys.KeyCall
+import com.example.messenger.data.keys.KyberPreKeyUpload
 import com.example.messenger.data.keys.OneTimePreKeyRefresh
-import com.example.messenger.data.keys.PreKeyBundleCall
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,8 +55,9 @@ class ChatViewModel(
     private val tokens: TokenRefresher,
     private val authRepository: AuthRepository,
     private val repository: ChatRepository,
-    private val keys: KeyRepository,
     private val preKeys: OneTimePreKeyRefresh,
+    private val kyber: KyberPreKeyUpload,
+    private val crypto: ChatCrypto,
     private val socket: MessengerSocket,
 ) : ViewModel() {
     var threads by mutableStateOf<List<ChatThread>>(emptyList())
@@ -97,7 +104,6 @@ class ChatViewModel(
     private var latestSearchId = ""
     private val loadedConversations = mutableSetOf<String>()
     private val localPins = mutableMapOf<String, Boolean>()
-    private val peerBundles = mutableMapOf<String, PreKeyBundle>()
     private val preKeyRefresh = Mutex()
 
     val peerContacts: List<ContactEntry>
@@ -113,7 +119,10 @@ class ChatViewModel(
         tokens.start(viewModelScope)
         socket.start(viewModelScope)
         viewModelScope.launch {
-            socket.opened.collect { refreshOneTimePreKeys() }
+            socket.opened.collect {
+                refreshOneTimePreKeys()
+                publishKyberPreKey()
+            }
         }
         viewModelScope.launch {
             socket.incoming.collect(::onIncomingMessage)
@@ -200,7 +209,12 @@ class ChatViewModel(
             listError = null
             when (val result = repository.listConversations(token)) {
                 is ChatCall.Ok -> {
-                    threads = mergePins(result.value.map { it.toThread(userId) })
+                    val mapped = buildList {
+                        for (conversation in result.value) {
+                            add(conversation.toThread(userId).withPlainSnippet(conversation))
+                        }
+                    }
+                    threads = mergePins(mapped)
                     listLoading = false
                 }
                 is ChatCall.Failed -> {
@@ -230,14 +244,26 @@ class ChatViewModel(
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
-            if (socket.sendMessage(conversationId, trimmed)) {
+            val peerId = threads.firstOrNull { it.id == conversationId }?.peerId.orEmpty()
+            if (peerId.isBlank() || userId.isBlank()) {
+                notice = "Can't encrypt this chat yet."
                 return@launch
             }
             val token = requireAccessToken() ?: run {
                 notice = "Sign in again to send messages."
                 return@launch
             }
-            when (val result = repository.sendMessage(token, conversationId, trimmed)) {
+            val ciphertext = when (val encrypted = crypto.encrypt(userId, token, peerId, trimmed)) {
+                is CryptoCall.Ok -> encrypted.body
+                is CryptoCall.Failed -> {
+                    notice = encrypted.message
+                    return@launch
+                }
+            }
+            if (socket.sendMessage(conversationId, ciphertext)) {
+                return@launch
+            }
+            when (val result = repository.sendMessage(token, conversationId, ciphertext)) {
                 is ChatCall.Ok -> onIncomingMessage(result.value)
                 is ChatCall.Failed -> notice = result.message
             }
@@ -311,14 +337,7 @@ class ChatViewModel(
             return
         }
         threads.firstOrNull { it.peerId == peer }?.let { existing ->
-            viewModelScope.launch {
-                val token = requireAccessToken() ?: run {
-                    notice = "Sign in again to start a chat."
-                    return@launch
-                }
-                if (!claimPeerKeys(token, peer)) return@launch
-                onOpened(existing.id)
-            }
+            onOpened(existing.id)
             return
         }
         openConversation(peerUserId = peer, username = null, onOpened = onOpened)
@@ -400,11 +419,6 @@ class ChatViewModel(
             connectBusy = true
             when (val result = repository.openConversation(token, peerUserId = peerUserId, username = username)) {
                 is ChatCall.Ok -> {
-                    val peerId = result.value.peer.id
-                    if (!claimPeerKeys(token, peerId)) {
-                        connectBusy = false
-                        return@launch
-                    }
                     upsertConversation(result.value)
                     connectBusy = false
                     onOpened(result.value.id)
@@ -423,7 +437,12 @@ class ChatViewModel(
             when (val result = repository.listMessages(token, conversationId)) {
                 is ChatCall.Ok -> {
                     // API returns newest first; UI wants oldest → newest.
-                    val ordered = result.value.asReversed().map { it.toCipherMessage(userId) }
+                    val peerId = threads.firstOrNull { it.id == conversationId }?.peerId.orEmpty()
+                    val ordered = buildList {
+                        for (message in result.value.asReversed()) {
+                            add(message.toCipherMessage(userId).copy(body = plainBody(message, peerId)))
+                        }
+                    }
                     messages = messages + (conversationId to ordered)
                     loadedConversations += conversationId
                 }
@@ -432,28 +451,31 @@ class ChatViewModel(
         }
     }
 
-    private fun onIncomingMessage(message: ApiMessage) {
-        val cipher = message.toCipherMessage(userId)
+    private suspend fun onIncomingMessage(message: ApiMessage) {
+        val peerId = threads.firstOrNull { it.id == message.conversationId }?.peerId
+            ?: message.senderId.takeIf { it != userId }.orEmpty()
+        val plain = plainBody(message, peerId)
+        val cipher = message.toCipherMessage(userId).copy(body = plain)
         val existing = messages[message.conversationId].orEmpty()
         if (existing.any { it.id == cipher.id }) {
-            updateThreadFromMessage(message, bumpUnread = false)
+            updateThreadFromMessage(message, plain, bumpUnread = false)
             return
         }
         messages = messages + (message.conversationId to (existing + cipher))
         loadedConversations += message.conversationId
         val viewing = activeConversationId == message.conversationId
-        updateThreadFromMessage(message, bumpUnread = !viewing && !cipher.outgoing)
+        updateThreadFromMessage(message, plain, bumpUnread = !viewing && !cipher.outgoing)
         if (threads.none { it.id == message.conversationId }) {
             refreshConversations()
         }
     }
 
-    private fun updateThreadFromMessage(message: ApiMessage, bumpUnread: Boolean) {
+    private fun updateThreadFromMessage(message: ApiMessage, plain: String, bumpUnread: Boolean) {
         val time = formatChatTime(message.createdAt)
         threads = threads.map { thread ->
             if (thread.id != message.conversationId) return@map thread
             thread.copy(
-                snippet = message.body,
+                snippet = plain,
                 timeLabel = time,
                 voice = false,
                 unread = if (bumpUnread) thread.unread + 1 else 0,
@@ -494,23 +516,38 @@ class ChatViewModel(
         usernameResults = frame.users.map { it.asPerson() }
     }
 
-    private suspend fun claimPeerKeys(token: String, peerId: String): Boolean {
-        if (peerId.isBlank() || peerBundles.containsKey(peerId)) return true
-        return when (val result = keys.claimPreKeyBundle(token, peerId)) {
-            is PreKeyBundleCall.Success -> {
-                peerBundles[peerId] = result.bundle
-                true
-            }
-            is PreKeyBundleCall.Failed -> {
-                notice = result.message
-                false
+    private suspend fun plainBody(message: ApiMessage, peerId: String): String {
+        val outgoing = message.senderId == userId
+        val peer = if (outgoing) peerId else message.senderId
+        return crypto.reveal(userId, peer, message.body, outgoing)
+    }
+
+    private suspend fun ChatThread.withPlainSnippet(conversation: ApiConversation): ChatThread {
+        val last = conversation.lastMessage ?: return this
+        val plain = crypto.reveal(
+            localUserId = userId,
+            peerUserId = conversation.peer.id,
+            body = last.body,
+            outgoing = last.senderId == userId,
+        )
+        return copy(snippet = plain.ifBlank { snippet })
+    }
+
+    private fun publishKyberPreKey() {
+        val username = sessionStore.usernameLabel
+        if (username.isBlank()) return
+        viewModelScope.launch {
+            val token = requireAccessToken() ?: return@launch
+            when (val result = kyber.publishIfNeeded(username, token)) {
+                is KeyCall.Failed -> Log.w(TAG, result.message)
+                else -> Unit
             }
         }
     }
 
     private fun WsUserHit.asPerson(): ContactEntry {
         val name = displayName.ifBlank { username }.ifBlank { "User" }
-        val ready = !identityKey.isNullOrBlank() && signedPreKey != null
+        val ready = !identityKey.isNullOrBlank() && signedPreKey != null && kyberPreKey != null
         return ContactEntry(
             id = id,
             name = name,
@@ -541,6 +578,10 @@ class ChatViewModel(
     }
 
     private suspend fun requireAccessToken(): String? = tokens.ensureFreshAccessToken()
+
+    private companion object {
+        const val TAG = "Chat"
+    }
 }
 
 class ChatViewModelFactory(
@@ -550,15 +591,25 @@ class ChatViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
             val bound = ApiClient.bind(sessionStore)
+            val identity = IdentityStore(appContext)
+            val preKeyStore = LocalPreKeyStore(appContext)
+            val username = sessionStore.usernameLabel
             @Suppress("UNCHECKED_CAST")
             return ChatViewModel(
                 sessionStore = sessionStore,
                 tokens = bound.tokenRefresher,
                 authRepository = ApiClient.repository,
                 repository = bound.chatRepository,
-                keys = bound.keyRepository,
                 preKeys = OneTimePreKeyRefresh(
-                    preKeys = LocalPreKeyStore(appContext),
+                    preKeys = preKeyStore,
+                    keys = bound.keyRepository,
+                ),
+                kyber = KyberPreKeyUpload(identity, preKeyStore, bound.keyRepository),
+                crypto = ChatCrypto(
+                    cipher = MessageCipher(
+                        DeviceProtocolStore(appContext, username, identity, preKeyStore),
+                    ),
+                    sent = SentPlaintextStore(appContext, username),
                     keys = bound.keyRepository,
                 ),
                 socket = ApiClient.messengerSocket(sessionStore),

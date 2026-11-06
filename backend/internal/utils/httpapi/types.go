@@ -134,7 +134,7 @@ type MessageList struct {
 
 // SendMessage is the body of POST /conversations/{id}/messages.
 type SendMessage struct {
-	Body string `json:"body" required:"true" description:"1 to 4000 characters."`
+	Body string `json:"body" required:"true" description:"Encrypted message body."`
 }
 
 // ListMessagesQuery is the path and query for GET /conversations/{id}/messages.
@@ -147,7 +147,7 @@ type ListMessagesQuery struct {
 // SendMessageRequest is the path and body for POST /conversations/{id}/messages.
 type SendMessageRequest struct {
 	ID   string `path:"id" required:"true" description:"Conversation id."`
-	Body string `json:"body" required:"true" description:"1 to 4000 characters."`
+	Body string `json:"body" required:"true" description:"Encrypted message body."`
 }
 
 // WSInfo documents the WebSocket upgrade at GET /ws.
@@ -156,13 +156,14 @@ type WSInfo struct {
 }
 
 // UserSearchHit is one row of a user.search.results frame.
-// IdentityKey and SignedPreKey are set together when the user can be messaged.
+// IdentityKey, SignedPreKey, and KyberPreKey are set together when the user can be messaged.
 type UserSearchHit struct {
 	ID           string        `json:"id" required:"true"`
 	Username     string        `json:"username" required:"true" description:"Username handle."`
 	DisplayName  string        `json:"display_name" required:"true" description:"May be empty when the user has not set one."`
-	IdentityKey  string        `json:"identity_key,omitempty" description:"Base64 identity public key. Present with signed_pre_key when this user can be messaged."`
-	SignedPreKey *SignedPreKey `json:"signed_pre_key,omitempty" description:"Current signed prekey. Omitted, with identity_key, until both are published."`
+	IdentityKey  string        `json:"identity_key,omitempty" description:"Base64 identity public key. Present with signed_pre_key and kyber_pre_key when this user can be messaged."`
+	SignedPreKey *SignedPreKey `json:"signed_pre_key,omitempty" description:"Current signed prekey. Omitted, with identity_key and kyber_pre_key, until all three are published."`
+	KyberPreKey  *KyberPreKey  `json:"kyber_pre_key,omitempty" description:"Current Kyber prekey. Omitted until an identity key, signed prekey, and Kyber prekey are published."`
 }
 
 type CreateIdentityKeyRequest struct {
@@ -265,11 +266,45 @@ type SignedPreKey struct {
 	Signature string `json:"signature" required:"true" description:"Base64-encoded XEdDSA signature of the public key (64 bytes)."`
 }
 
-// PreKeyBundle is the public key material for an X3DH session with one user.
+// KyberPreKey is a libsignal Kyber1024 prekey public key and its identity signature.
+type KyberPreKey struct {
+	KeyID     int    `json:"key_id" required:"true" description:"libsignal Kyber prekey id."`
+	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded Kyber1024 public key (1569 bytes)."`
+	Signature string `json:"signature" required:"true" description:"Base64-encoded XEdDSA signature of the public key (64 bytes)."`
+}
+
+// UploadKyberPreKeyRequest is the body of POST /keys/kyber-prekey.
+type UploadKyberPreKeyRequest struct {
+	KeyID     int    `json:"key_id" required:"true" description:"libsignal Kyber prekey id, from 0 through 16777215."`
+	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded Kyber1024 public key (1569 bytes)."`
+	Signature string `json:"signature" required:"true" description:"Base64-encoded XEdDSA signature of the public key (64 bytes)."`
+}
+
+// UnmarshalJSON requires key_id so an omitted id is not stored as 0.
+func (r *UploadKyberPreKeyRequest) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		KeyID     *int   `json:"key_id"`
+		PublicKey string `json:"public_key"`
+		Signature string `json:"signature"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.KeyID == nil {
+		return fmt.Errorf("key_id is required")
+	}
+	r.KeyID = *raw.KeyID
+	r.PublicKey = raw.PublicKey
+	r.Signature = raw.Signature
+	return nil
+}
+
+// PreKeyBundle is the public key material for a PQXDH session with one user.
 // PreKey is omitted when that user has no one-time prekeys left.
 type PreKeyBundle struct {
 	IdentityKey  string         `json:"identity_key" required:"true" description:"Base64-encoded libsignal identity public key (33 bytes)."`
 	SignedPreKey SignedPreKey   `json:"signed_pre_key" required:"true"`
+	KyberPreKey  KyberPreKey    `json:"kyber_pre_key" required:"true"`
 	PreKey       *OneTimePreKey `json:"pre_key,omitempty" description:"One-time prekey claimed by this request. Omitted when the user has none left."`
 }
 
@@ -352,13 +387,18 @@ func NewIdentityKey(key *model.IdentityKey) IdentityKey {
 	}
 }
 
-func NewPreKeyBundle(identity *model.IdentityKey, signed *model.SignedPreKey, oneTime *model.OneTimePreKey) PreKeyBundle {
+func NewPreKeyBundle(identity *model.IdentityKey, signed *model.SignedPreKey, kyber *model.KyberPreKey, oneTime *model.OneTimePreKey) PreKeyBundle {
 	bundle := PreKeyBundle{
 		IdentityKey: identity.PublicKey,
 		SignedPreKey: SignedPreKey{
 			KeyID:     signed.KeyID,
 			PublicKey: signed.PublicKey,
 			Signature: signed.Signature,
+		},
+		KyberPreKey: KyberPreKey{
+			KeyID:     kyber.KeyID,
+			PublicKey: kyber.PublicKey,
+			Signature: kyber.Signature,
 		},
 	}
 	if oneTime != nil {

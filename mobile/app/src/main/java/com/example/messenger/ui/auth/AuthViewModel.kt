@@ -21,6 +21,7 @@ import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.keys.KeyCall
 import com.example.messenger.data.keys.KeyRepository
+import com.example.messenger.data.keys.KyberPreKeyUpload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -44,6 +45,7 @@ class AuthViewModel(
     private val keys: KeyRepository,
     private val identity: IdentityStore,
     private val preKeys: LocalPreKeyStore,
+    private val kyber: KyberPreKeyUpload,
 ) : ViewModel() {
     var usernameLoading by mutableStateOf(false)
         private set
@@ -203,7 +205,7 @@ class AuthViewModel(
             val published = withContext(Dispatchers.IO) {
                 runCatching { preKeys.isPublished(username) }.getOrDefault(false)
             }
-            if (published) return true
+            if (published) return publishKyber(session)
             usernameError = "Couldn't create your prekeys on this device."
             return false
         }
@@ -237,6 +239,7 @@ class AuthViewModel(
             }
             KeyCall.Ok -> Unit
         }
+        if (!publishKyber(session)) return false
         val saved = withContext(Dispatchers.IO) {
             runCatching { preKeys.confirmUpload(username) }.isSuccess
         }
@@ -244,6 +247,16 @@ class AuthViewModel(
             usernameError = "Couldn't store your prekeys on this device."
         }
         return saved
+    }
+
+    private suspend fun publishKyber(session: Session): Boolean {
+        return when (val result = kyber.publishIfNeeded(session.profile.username, session.accessToken)) {
+            null, KeyCall.Ok -> true
+            is KeyCall.Failed -> {
+                usernameError = result.message
+                false
+            }
+        }
     }
 
     /**
@@ -286,14 +299,17 @@ class AuthViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
             val bound = ApiClient.bind(sessionStore)
+            val identity = IdentityStore(appContext)
+            val preKeys = LocalPreKeyStore(appContext)
             @Suppress("UNCHECKED_CAST")
             return AuthViewModel(
                 repository = repository,
                 sessionStore = sessionStore,
                 tokens = bound.tokenRefresher,
                 keys = bound.keyRepository,
-                identity = IdentityStore(appContext),
-                preKeys = LocalPreKeyStore(appContext),
+                identity = identity,
+                preKeys = preKeys,
+                kyber = KyberPreKeyUpload(identity, preKeys, bound.keyRepository),
             ) as T
         }
         error("Unknown ViewModel: ${modelClass.name}")

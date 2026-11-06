@@ -98,6 +98,12 @@ interface MessengerApi {
         @Body body: UploadSignedPreKeyRequest,
     ): Response<ResponseBody>
 
+    @POST("keys/kyber-prekey")
+    suspend fun uploadKyberPreKey(
+        @Header("Authorization") authorization: String,
+        @Body body: UploadKyberPreKeyRequest,
+    ): Response<ResponseBody>
+
     @GET("keys/one-time-prekeys")
     suspend fun oneTimePreKeyCount(
         @Header("Authorization") authorization: String,

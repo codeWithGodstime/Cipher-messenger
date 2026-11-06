@@ -6,6 +6,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import org.signal.libsignal.protocol.IdentityKeyPair
 import org.signal.libsignal.protocol.ecc.ECKeyPair
+import org.signal.libsignal.protocol.kem.KEMKeyPair
+import org.signal.libsignal.protocol.kem.KEMKeyType
+import org.signal.libsignal.protocol.state.KyberPreKeyRecord
 import org.signal.libsignal.protocol.state.PreKeyRecord
 import org.signal.libsignal.protocol.state.SignedPreKeyRecord
 
@@ -20,6 +23,8 @@ class GeneratedPreKeys(
     val oneTime: List<OneTimePreKeyPublic>,
     val signedRecord: SignedPreKeyRecord,
     val oneTimeRecords: List<PreKeyRecord>,
+    val kyber: KyberPreKeyUpload,
+    val kyberRecord: KyberPreKeyRecord,
 )
 
 class OneTimePreKeyPublic(
@@ -34,6 +39,13 @@ class SignedPreKeyUpload(
     val signature: String,
 )
 
+/** Last-resort Kyber prekey fields the server stores for this account. */
+class KyberPreKeyUpload(
+    val keyId: Int,
+    val publicKey: String,
+    val signature: String,
+)
+
 class StoredPreKeys(
     val signed: SignedPreKeyRecord,
     val oneTime: List<PreKeyRecord>,
@@ -42,14 +54,15 @@ class StoredPreKeys(
 /**
  * Prekey records stored on this device, one slot per username.
  * libsignal 0.105 no longer generates these from KeyHelper, so this store
- * follows the same steps: a Curve25519 pair, and an identity signature
- * over the signed prekey public key.
+ * follows the same steps: a Curve25519 pair, a Kyber1024 pair, and an identity
+ * signature over each public key.
  *
  * One-time prekeys are appended. A pending id list is the batch whose public
  * keys still need to reach the server. Private keys stay on the device until
  * a session consumes them.
  */
 class LocalPreKeyStore(context: Context) {
+    private val lock = Any()
     private val prefs = EncryptedSharedPreferences.create(
         context,
         "cipher_prekeys",
@@ -58,11 +71,17 @@ class LocalPreKeyStore(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
-    fun isPublished(username: String): Boolean =
+    fun isPublished(username: String): Boolean = synchronized(lock) {
         prefs.getBoolean(publishedSlot(username), false)
+    }
 
-    fun hasSignedPreKey(username: String): Boolean =
+    fun hasSignedPreKey(username: String): Boolean = synchronized(lock) {
         prefs.getString(signedSlot(username), null) != null
+    }
+
+    fun isKyberPublished(username: String): Boolean = synchronized(lock) {
+        prefs.getBoolean(kyberPublishedSlot(username), false)
+    }
 
     fun generate(identity: IdentityKeyPair): GeneratedPreKeys {
         val signedPair = ECKeyPair.generate()
@@ -76,6 +95,7 @@ class LocalPreKeyStore(context: Context) {
         )
         val ids = allocateOneTimePreKeyIds(ONE_TIME_PRE_KEY_START, ONE_TIME_PRE_KEY_BATCH, emptySet())
         val oneTime = newOneTimeRecords(ids)
+        val kyber = newKyber(identity)
         return GeneratedPreKeys(
             signedKeyId = signed.id,
             signedPublicKey = encode(signedPublic),
@@ -83,6 +103,8 @@ class LocalPreKeyStore(context: Context) {
             oneTime = oneTime.publicKeys,
             signedRecord = signed,
             oneTimeRecords = oneTime.records,
+            kyber = kyber.upload,
+            kyberRecord = kyber.record,
         )
     }
 
@@ -90,15 +112,17 @@ class LocalPreKeyStore(context: Context) {
      * Stores a first batch and marks its ids as waiting for upload.
      * The published flag stays unset until the server accepts the batch.
      */
-    fun storeInitial(username: String, keys: GeneratedPreKeys) {
+    fun storeInitial(username: String, keys: GeneratedPreKeys) = synchronized(lock) {
         val pending = keys.oneTimeRecords.joinToString("\n") { it.id.toString() }
         val next = nextOneTimePreKeyId(keys.oneTimeRecords.maxOf { it.id })
         val written = prefs.edit()
             .putString(signedSlot(username), encode(keys.signedRecord.serialize()))
             .putString(oneTimeSlot(username), encodeRecords(keys.oneTimeRecords))
+            .putString(kyberSlot(username), encode(keys.kyberRecord.serialize()))
             .putString(pendingSlot(username), pending)
             .putInt(nextSlot(username), next)
             .putBoolean(publishedSlot(username), false)
+            .putBoolean(kyberPublishedSlot(username), false)
             .commit()
         if (!written) error("Couldn't store prekeys")
     }
@@ -116,18 +140,82 @@ class LocalPreKeyStore(context: Context) {
             ?: error("Prekeys are stored without a one-time batch to upload.")
     }
 
-    fun signedUpload(username: String): SignedPreKeyUpload? {
+    /**
+     * Null when this username's Kyber prekey is already on the server.
+     * Otherwise the public key that still needs an upload. A missing local
+     * record is generated and kept until the upload is confirmed.
+     */
+    fun prepareKyber(username: String, identity: IdentityKeyPair): KyberPreKeyUpload? = synchronized(lock) {
+        if (prefs.getBoolean(kyberPublishedSlot(username), false) && kyberRecord(username) != null) {
+            return null
+        }
+        if (kyberRecord(username) == null) {
+            val created = newKyber(identity)
+            val written = prefs.edit()
+                .putString(kyberSlot(username), encode(created.record.serialize()))
+                .putBoolean(kyberPublishedSlot(username), false)
+                .commit()
+            if (!written) error("Couldn't store prekeys")
+            return created.upload
+        }
+        kyberUploadLocked(username)
+    }
+
+    fun confirmKyber(username: String) = synchronized(lock) {
+        val written = prefs.edit().putBoolean(kyberPublishedSlot(username), true).commit()
+        if (!written) error("Couldn't store prekeys")
+    }
+
+    fun signedUpload(username: String): SignedPreKeyUpload? = synchronized(lock) {
         val raw = prefs.getString(signedSlot(username), null) ?: return null
         val record = SignedPreKeyRecord(decode(raw))
-        return SignedPreKeyUpload(
+        SignedPreKeyUpload(
             keyId = record.id,
             publicKey = encode(record.keyPair.publicKey.serialize()),
             signature = encode(record.signature),
         )
     }
 
+    fun signedRecord(username: String): SignedPreKeyRecord? = synchronized(lock) {
+        val raw = prefs.getString(signedSlot(username), null) ?: return null
+        SignedPreKeyRecord(decode(raw))
+    }
+
+    fun saveSignedRecord(username: String, record: SignedPreKeyRecord) = synchronized(lock) {
+        val written = prefs.edit()
+            .putString(signedSlot(username), encode(record.serialize()))
+            .commit()
+        if (!written) error("Couldn't store prekeys")
+    }
+
+    fun kyberRecord(username: String): KyberPreKeyRecord? = synchronized(lock) {
+        loadKyber(username)
+    }
+
+    fun saveKyberRecord(username: String, record: KyberPreKeyRecord) = synchronized(lock) {
+        val written = prefs.edit()
+            .putString(kyberSlot(username), encode(record.serialize()))
+            .commit()
+        if (!written) error("Couldn't store prekeys")
+    }
+
+    fun oneTimeRecord(username: String, id: Int): PreKeyRecord? = synchronized(lock) {
+        loadOneTime(username).firstOrNull { it.id == id }
+    }
+
+    fun hasOneTimeRecord(username: String, id: Int): Boolean = oneTimeRecord(username, id) != null
+
+    fun saveOneTimeRecord(username: String, record: PreKeyRecord) = synchronized(lock) {
+        val next = loadOneTime(username).filter { it.id != record.id } + record
+        writeOneTime(username, next)
+    }
+
+    fun deleteOneTimeRecord(username: String, id: Int) = synchronized(lock) {
+        writeOneTime(username, loadOneTime(username).filter { it.id != id })
+    }
+
     /** Public keys for the batch that has not been confirmed on the server. */
-    fun pendingOneTime(username: String): List<OneTimePreKeyPublic>? {
+    fun pendingOneTime(username: String): List<OneTimePreKeyPublic>? = synchronized(lock) {
         val raw = prefs.getString(pendingSlot(username), null) ?: return null
         val ids = raw.lineSequence().mapNotNull { it.toIntOrNull() }.toList()
         if (ids.isEmpty()) return null
@@ -145,7 +233,7 @@ class LocalPreKeyStore(context: Context) {
      * Adds a batch of new one-time prekeys and marks them pending.
      * A batch already pending is returned unchanged.
      */
-    fun stageBatch(username: String): List<OneTimePreKeyPublic> {
+    fun stageBatch(username: String): List<OneTimePreKeyPublic> = synchronized(lock) {
         pendingOneTime(username)?.let { return it }
         val existing = loadOneTime(username)
         val ids = allocateOneTimePreKeyIds(
@@ -161,17 +249,17 @@ class LocalPreKeyStore(context: Context) {
             .putInt(nextSlot(username), nextOneTimePreKeyId(ids.last()))
             .commit()
         if (!written) error("Couldn't store prekeys")
-        return created.publicKeys
+        created.publicKeys
     }
 
     /** Drops the pending id list. Private keys and the next id stay on the device. */
-    fun discardPending(username: String) {
+    fun discardPending(username: String) = synchronized(lock) {
         val written = prefs.edit().remove(pendingSlot(username)).commit()
         if (!written) error("Couldn't store prekeys")
     }
 
     /** Drops the pending batch and records that the server has this user's prekeys. */
-    fun confirmUpload(username: String) {
+    fun confirmUpload(username: String) = synchronized(lock) {
         val written = prefs.edit()
             .remove(pendingSlot(username))
             .putBoolean(publishedSlot(username), true)
@@ -179,11 +267,10 @@ class LocalPreKeyStore(context: Context) {
         if (!written) error("Couldn't store prekeys")
     }
 
-    fun find(username: String): StoredPreKeys? {
-        if (!isPublished(username)) return null
+    fun find(username: String): StoredPreKeys? = synchronized(lock) {
+        if (!prefs.getBoolean(publishedSlot(username), false)) return null
         val signedRaw = prefs.getString(signedSlot(username), null) ?: return null
-        val oneTime = loadOneTime(username)
-        return StoredPreKeys(SignedPreKeyRecord(decode(signedRaw)), oneTime)
+        StoredPreKeys(SignedPreKeyRecord(decode(signedRaw)), loadOneTime(username))
     }
 
     private fun nextStart(username: String, existing: List<PreKeyRecord>): Int {
@@ -191,6 +278,44 @@ class LocalPreKeyStore(context: Context) {
         if (stored in 1..ONE_TIME_PRE_KEY_ID_MAX) return stored
         val maxId = existing.maxOfOrNull { it.id } ?: 0
         return if (maxId <= 0 || maxId >= ONE_TIME_PRE_KEY_ID_MAX) 1 else maxId + 1
+    }
+
+    private fun newKyber(identity: IdentityKeyPair): KyberBatch {
+        val pair = KEMKeyPair.generate(KEMKeyType.KYBER_1024)
+        val publicKey = pair.publicKey.serialize()
+        val signature = identity.privateKey.calculateSignature(publicKey)
+        val record = KyberPreKeyRecord(
+            KYBER_PRE_KEY_ID,
+            System.currentTimeMillis(),
+            pair,
+            signature,
+        )
+        return KyberBatch(
+            record = record,
+            upload = KyberPreKeyUpload(
+                keyId = record.id,
+                publicKey = encode(publicKey),
+                signature = encode(signature),
+            ),
+        )
+    }
+
+    private fun loadKyber(username: String): KyberPreKeyRecord? {
+        val raw = prefs.getString(kyberSlot(username), null) ?: return null
+        return KyberPreKeyRecord(decode(raw))
+    }
+
+    private fun kyberUploadLocked(username: String): KyberPreKeyUpload? {
+        val record = loadKyber(username) ?: return null
+        val publicKey = record.keyPair.publicKey.serialize()
+        return KyberPreKeyUpload(record.id, encode(publicKey), encode(record.signature))
+    }
+
+    private fun writeOneTime(username: String, records: List<PreKeyRecord>) {
+        val written = prefs.edit()
+            .putString(oneTimeSlot(username), encodeRecords(records))
+            .commit()
+        if (!written) error("Couldn't store prekeys")
     }
 
     private fun newOneTimeRecords(ids: List<Int>): OneTimeBatch {
@@ -221,6 +346,10 @@ class LocalPreKeyStore(context: Context) {
 
     private fun signedSlot(username: String): String = "signed:${slot(username)}"
 
+    private fun kyberSlot(username: String): String = "kyber:${slot(username)}"
+
+    private fun kyberPublishedSlot(username: String): String = "kyber-published:${slot(username)}"
+
     private fun oneTimeSlot(username: String): String = "onetime:${slot(username)}"
 
     private fun pendingSlot(username: String): String = "pending:${slot(username)}"
@@ -236,8 +365,14 @@ class LocalPreKeyStore(context: Context) {
         val publicKeys: List<OneTimePreKeyPublic>,
     )
 
+    private class KyberBatch(
+        val record: KyberPreKeyRecord,
+        val upload: KyberPreKeyUpload,
+    )
+
     private companion object {
         const val SIGNED_PRE_KEY_ID = 1
+        const val KYBER_PRE_KEY_ID = 1
         const val ONE_TIME_PRE_KEY_START = 1
     }
 }

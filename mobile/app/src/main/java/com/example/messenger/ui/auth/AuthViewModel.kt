@@ -9,8 +9,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.messenger.crypto.IdentityStore
+import com.example.messenger.crypto.LocalPreKeyStore
 import com.example.messenger.data.api.ApiClient
+import com.example.messenger.data.api.OneTimePreKeyRequest
 import com.example.messenger.data.api.Session
+import org.signal.libsignal.protocol.IdentityKeyPair
 import com.example.messenger.data.auth.AuthCall
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.ProfileCall
@@ -40,6 +43,7 @@ class AuthViewModel(
     private val tokens: TokenRefresher,
     private val keys: KeyRepository,
     private val identity: IdentityStore,
+    private val preKeys: LocalPreKeyStore,
 ) : ViewModel() {
     var usernameLoading by mutableStateOf(false)
         private set
@@ -143,7 +147,7 @@ class AuthViewModel(
         val existing = withContext(Dispatchers.IO) { runCatching { identity.find(username) } }
         return existing.fold(
             onSuccess = { stored ->
-                if (stored != null) true else createAndUploadIdentity(session)
+                if (stored != null) uploadPreKeys(session, stored) else createAndUploadIdentity(session)
             },
             onFailure = { error ->
                 Log.w(TAG, "identity lookup failed", error)
@@ -172,14 +176,70 @@ class AuthViewModel(
                 }
                 if (!saved) {
                     usernameError = "Couldn't store your identity key on this device."
+                    return false
                 }
-                saved
+                uploadPreKeys(session, created)
             }
             is KeyCall.Failed -> {
                 usernameError = result.message
                 false
             }
         }
+    }
+
+    /**
+     * Uploads a signed prekey and one-time prekeys for an identity already stored
+     * on this device. A published flag skips the upload. A failed upload leaves
+     * the flag unset so the next sign-in generates a fresh pair for this identity.
+     */
+    private suspend fun uploadPreKeys(session: Session, identityKey: IdentityKeyPair): Boolean {
+        val username = session.profile.username
+        val published = withContext(Dispatchers.IO) {
+            runCatching { preKeys.isPublished(username) }
+        }
+        val already = published.getOrElse { error ->
+            Log.w(TAG, "prekey lookup failed", error)
+            usernameError = "Couldn't read the prekeys stored for this username."
+            return false
+        }
+        if (already) return true
+
+        val generated = withContext(Dispatchers.IO) {
+            runCatching { preKeys.generate(identityKey) }
+                .onFailure { error -> Log.w(TAG, "prekey generation failed", error) }
+                .getOrNull()
+        }
+        if (generated == null) {
+            usernameError = "Couldn't create your prekeys on this device."
+            return false
+        }
+        when (val signed = keys.publishSignedPreKey(
+            session.accessToken,
+            generated.signedKeyId,
+            generated.signedPublicKey,
+            generated.signature,
+        )) {
+            is KeyCall.Failed -> {
+                usernameError = signed.message
+                return false
+            }
+            KeyCall.Ok -> Unit
+        }
+        val oneTime = generated.oneTime.map { OneTimePreKeyRequest(it.keyId, it.publicKey) }
+        when (val uploaded = keys.publishOneTimePreKeys(session.accessToken, oneTime)) {
+            is KeyCall.Failed -> {
+                usernameError = uploaded.message
+                return false
+            }
+            KeyCall.Ok -> Unit
+        }
+        val saved = withContext(Dispatchers.IO) {
+            runCatching { preKeys.save(username, generated) }.isSuccess
+        }
+        if (!saved) {
+            usernameError = "Couldn't store your prekeys on this device."
+        }
+        return saved
     }
 
     private companion object {
@@ -202,6 +262,7 @@ class AuthViewModelFactory(
                 tokens = bound.tokenRefresher,
                 keys = bound.keyRepository,
                 identity = IdentityStore(appContext),
+                preKeys = LocalPreKeyStore(appContext),
             ) as T
         }
         error("Unknown ViewModel: ${modelClass.name}")

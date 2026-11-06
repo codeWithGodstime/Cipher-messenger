@@ -116,6 +116,24 @@ data class CreateIdentityKeyRequest(
 )
 
 @Serializable
+data class UploadSignedPreKeyRequest(
+    @SerialName("key_id") val keyId: Int,
+    @SerialName("public_key") val publicKey: String,
+    val signature: String,
+)
+
+@Serializable
+data class OneTimePreKeyRequest(
+    @SerialName("key_id") val keyId: Int,
+    @SerialName("public_key") val publicKey: String,
+)
+
+@Serializable
+data class UploadOneTimePreKeysRequest(
+    val prekeys: List<OneTimePreKeyRequest>,
+)
+
+@Serializable
 data class WsUserHit(
     val id: String,
     val username: String,

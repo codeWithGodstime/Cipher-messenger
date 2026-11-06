@@ -91,4 +91,16 @@ interface MessengerApi {
         @Header("Authorization") authorization: String,
         @Body body: CreateIdentityKeyRequest,
     ): Response<ResponseBody>
+
+    @POST("keys/signed-prekey")
+    suspend fun uploadSignedPreKey(
+        @Header("Authorization") authorization: String,
+        @Body body: UploadSignedPreKeyRequest,
+    ): Response<ResponseBody>
+
+    @POST("keys/one-time-prekeys")
+    suspend fun uploadOneTimePreKeys(
+        @Header("Authorization") authorization: String,
+        @Body body: UploadOneTimePreKeysRequest,
+    ): Response<ResponseBody>
 }

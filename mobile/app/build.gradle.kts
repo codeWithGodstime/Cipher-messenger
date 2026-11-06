@@ -100,6 +100,7 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.libsignal.android)
     implementation(libs.libsignal.client)
+    implementation(libs.androidx.security.crypto)
     coreLibraryDesugaring (libs.desugar.jdk.libs)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     testImplementation(libs.junit)

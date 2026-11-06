@@ -15,8 +15,8 @@ class IdentityStore(context: Context) {
         context,
         "cipher_identity",
         MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_GCM,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
     fun find(username: String): IdentityKeyPair? {

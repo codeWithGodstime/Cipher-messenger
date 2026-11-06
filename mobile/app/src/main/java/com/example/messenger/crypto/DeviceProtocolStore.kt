@@ -46,6 +46,26 @@ class DeviceProtocolStore(
 
     fun hasIdentity(): Boolean = identity.find(account) != null
 
+    /** Drops remote identities, sessions, and Kyber reuse records for this account. */
+    fun clearAccount() {
+        synchronized(lock) {
+            if (account.isEmpty()) {
+                prefs.edit().clear().commit()
+                return@synchronized
+            }
+            val editor = prefs.edit()
+            val identityPrefix = "id:$account:"
+            val sessionPrefix = "session:$account:"
+            val kyberUsed = usedKyberSlot()
+            for (key in prefs.all.keys) {
+                if (key == kyberUsed || key.startsWith(identityPrefix) || key.startsWith(sessionPrefix)) {
+                    editor.remove(key)
+                }
+            }
+            editor.commit()
+        }
+    }
+
     override fun getIdentityKeyPair(): IdentityKeyPair {
         return identity.find(account) ?: error("No identity key for this account")
     }
@@ -122,27 +142,33 @@ class DeviceProtocolStore(
         devices
     }
 
-    override fun storeSession(address: SignalProtocolAddress, record: SessionRecord) = synchronized(lock) {
-        prefs.edit()
-            .putString(sessionSlot(address), encode(record.serialize()))
-            .commit()
+    override fun storeSession(address: SignalProtocolAddress, record: SessionRecord) {
+        synchronized(lock) {
+            prefs.edit()
+                .putString(sessionSlot(address), encode(record.serialize()))
+                .commit()
+        }
     }
 
     override fun containsSession(address: SignalProtocolAddress): Boolean = synchronized(lock) {
         prefs.contains(sessionSlot(address))
     }
 
-    override fun deleteSession(address: SignalProtocolAddress) = synchronized(lock) {
-        prefs.edit().remove(sessionSlot(address)).commit()
+    override fun deleteSession(address: SignalProtocolAddress) {
+        synchronized(lock) {
+            prefs.edit().remove(sessionSlot(address)).commit()
+        }
     }
 
-    override fun deleteAllSessions(name: String) = synchronized(lock) {
-        val prefix = sessionPrefix(name)
-        val editor = prefs.edit()
-        for (key in prefs.all.keys) {
-            if (key.startsWith(prefix)) editor.remove(key)
+    override fun deleteAllSessions(name: String) {
+        synchronized(lock) {
+            val prefix = sessionPrefix(name)
+            val editor = prefs.edit()
+            for (key in prefs.all.keys) {
+                if (key.startsWith(prefix)) editor.remove(key)
+            }
+            editor.commit()
         }
-        editor.commit()
     }
 
     override fun loadSignedPreKey(signedPreKeyId: Int): SignedPreKeyRecord {

@@ -32,6 +32,14 @@ class IdentityStore(context: Context) {
             .commit()
     }
 
+    fun delete(username: String) {
+        prefs.edit().remove(slot(username)).commit()
+    }
+
+    fun clearAll() {
+        prefs.edit().clear().commit()
+    }
+
     fun publicKeyBase64(identity: IdentityKeyPair): String =
         Base64.encodeToString(identity.publicKey.serialize(), Base64.NO_WRAP)
 

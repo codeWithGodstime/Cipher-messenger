@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.content.Context
 import android.util.Log
+import com.example.messenger.crypto.AccountDeviceData
 import com.example.messenger.crypto.DeviceProtocolStore
 import com.example.messenger.crypto.IdentityStore
 import com.example.messenger.crypto.LocalPreKeyStore
@@ -59,6 +60,7 @@ class ChatViewModel(
     private val kyber: KyberPreKeyUpload,
     private val crypto: ChatCrypto,
     private val socket: MessengerSocket,
+    private val accountData: AccountDeviceData,
 ) : ViewModel() {
     var threads by mutableStateOf<List<ChatThread>>(emptyList())
         private set
@@ -66,7 +68,7 @@ class ChatViewModel(
         private set
     var savedContacts by mutableStateOf<List<ContactEntry>>(emptyList())
         private set
-    var listLoading by mutableStateOf(false)
+    var listLoading by mutableStateOf(true)
         private set
     var contactsLoading by mutableStateOf(false)
         private set
@@ -191,17 +193,26 @@ class ChatViewModel(
         if (loggingOut) return
         loggingOut = true
         val token = sessionStore.accessToken
+        threads = emptyList()
+        messages = emptyMap()
+        savedContacts = emptyList()
+        loadedConversations.clear()
+        localPins.clear()
+        activeConversationId = null
+        usernameResults = emptyList()
         socket.stop()
         tokens.signOut()
         loggedOutEvents.tryEmit(Unit)
-        if (!token.isNullOrBlank()) {
-            logoutJobs.launch { authRepository.logout(token) }
+        logoutJobs.launch {
+            runCatching { accountData.clear() }
+            if (!token.isNullOrBlank()) authRepository.logout(token)
         }
     }
 
     fun refreshConversations() {
         viewModelScope.launch {
             val token = requireAccessToken() ?: run {
+                listLoading = false
                 listError = "Sign in again to load chats."
                 return@launch
             }
@@ -594,6 +605,8 @@ class ChatViewModelFactory(
             val identity = IdentityStore(appContext)
             val preKeyStore = LocalPreKeyStore(appContext)
             val username = sessionStore.usernameLabel
+            val sessions = DeviceProtocolStore(appContext, username, identity, preKeyStore)
+            val sent = SentPlaintextStore(appContext, username)
             @Suppress("UNCHECKED_CAST")
             return ChatViewModel(
                 sessionStore = sessionStore,
@@ -606,13 +619,12 @@ class ChatViewModelFactory(
                 ),
                 kyber = KyberPreKeyUpload(identity, preKeyStore, bound.keyRepository),
                 crypto = ChatCrypto(
-                    cipher = MessageCipher(
-                        DeviceProtocolStore(appContext, username, identity, preKeyStore),
-                    ),
-                    sent = SentPlaintextStore(appContext, username),
+                    cipher = MessageCipher(sessions),
+                    sent = sent,
                     keys = bound.keyRepository,
                 ),
                 socket = ApiClient.messengerSocket(sessionStore),
+                accountData = AccountDeviceData(username, identity, preKeyStore, sessions, sent),
             ) as T
         }
         error("Unknown ViewModel: ${modelClass.name}")

@@ -267,6 +267,24 @@ class LocalPreKeyStore(context: Context) {
         if (!written) error("Couldn't store prekeys")
     }
 
+    fun delete(username: String) = synchronized(lock) {
+        val written = prefs.edit()
+            .remove(signedSlot(username))
+            .remove(kyberSlot(username))
+            .remove(kyberPublishedSlot(username))
+            .remove(oneTimeSlot(username))
+            .remove(pendingSlot(username))
+            .remove(nextSlot(username))
+            .remove(publishedSlot(username))
+            .commit()
+        if (!written) error("Couldn't store prekeys")
+    }
+
+    fun clearAll() = synchronized(lock) {
+        val written = prefs.edit().clear().commit()
+        if (!written) error("Couldn't store prekeys")
+    }
+
     fun find(username: String): StoredPreKeys? = synchronized(lock) {
         if (!prefs.getBoolean(publishedSlot(username), false)) return null
         val signedRaw = prefs.getString(signedSlot(username), null) ?: return null

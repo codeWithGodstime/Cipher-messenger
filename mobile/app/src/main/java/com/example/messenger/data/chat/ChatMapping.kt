@@ -44,6 +44,7 @@ fun ApiMessage.toCipherMessage(currentUserId: String): CipherMessage {
         outgoing = outgoing,
         body = body,
         time = formatChatTime(createdAt),
+        dayLabel = formatChatDay(createdAt),
         read = outgoing,
     )
 }
@@ -80,11 +81,21 @@ fun toneFor(seed: String): AvatarTone {
     return tones[index]
 }
 
+fun formatChatDay(iso: String): String {
+    val zoned = zoned(iso) ?: return "Today"
+    val today = LocalDate.now(zoned.zone)
+    val date = zoned.toLocalDate()
+    return when {
+        date == today -> "Today"
+        date == today.minusDays(1) -> "Yesterday"
+        date.year == today.year -> zoned.format(MONTH_DAY)
+        else -> zoned.format(MONTH_DAY_YEAR)
+    }
+}
+
 fun formatChatTime(iso: String): String {
-    val instant = runCatching { Instant.parse(iso) }.getOrNull() ?: return iso
-    val zone = ZoneId.systemDefault()
-    val zoned = instant.atZone(zone)
-    val today = LocalDate.now(zone)
+    val zoned = zoned(iso) ?: return iso
+    val today = LocalDate.now(zoned.zone)
     val date = zoned.toLocalDate()
     return when {
         date == today -> {
@@ -102,6 +113,9 @@ fun formatChatTime(iso: String): String {
         else -> zoned.format(MONTH_DAY_YEAR)
     }
 }
+
+private fun zoned(iso: String) =
+    runCatching { Instant.parse(iso).atZone(ZoneId.systemDefault()) }.getOrNull()
 
 private val MONTH_DAY: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MMM d", Locale.US)

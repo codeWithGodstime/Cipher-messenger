@@ -31,6 +31,20 @@ class SentPlaintextStore(context: Context, username: String) {
         return prefs.getString(slot(ciphertext), null)
     }
 
+    /** Drops every plaintext copy stored for this account. */
+    fun clearAccount() {
+        if (account.isEmpty()) {
+            prefs.edit().clear().commit()
+            return
+        }
+        val prefix = "$account:"
+        val editor = prefs.edit()
+        for (key in prefs.all.keys) {
+            if (key.startsWith(prefix)) editor.remove(key)
+        }
+        editor.commit()
+    }
+
     private fun slot(ciphertext: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(ciphertext.toByteArray(Charsets.UTF_8))
         val hash = Base64.encodeToString(digest, Base64.NO_WRAP)

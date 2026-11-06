@@ -57,6 +57,7 @@ data class CipherMessage(
     val outgoing: Boolean,
     val body: String,
     val time: String,
+    val dayLabel: String = "Today",
     val read: Boolean = false,
 )
 

@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -12,6 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.ui.auth.AuthApp
@@ -47,12 +52,26 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (signedIn) {
-                    MessengerHome(
-                        sessionStore = sessionStore,
-                        displayName = displayName,
-                        usernameLabel = usernameLabel,
-                        onLoggedOut = { leaveSession() },
-                    )
+                    val userId = sessionStore.userId.orEmpty().ifBlank { usernameLabel }
+                    key(userId) {
+                        val accountStore = remember {
+                            object : ViewModelStoreOwner {
+                                override val viewModelStore = ViewModelStore()
+                            }
+                        }
+                        DisposableEffect(accountStore) {
+                            onDispose { accountStore.viewModelStore.clear() }
+                        }
+                        CompositionLocalProvider(LocalViewModelStoreOwner provides accountStore) {
+                            MessengerHome(
+                                sessionStore = sessionStore,
+                                userId = userId,
+                                displayName = displayName,
+                                usernameLabel = usernameLabel,
+                                onLoggedOut = { leaveSession() },
+                            )
+                        }
+                    }
                 } else {
                     key(authGeneration) {
                         AuthApp(

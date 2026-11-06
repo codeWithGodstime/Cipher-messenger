@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -45,6 +47,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MessengerHome(
     sessionStore: SessionStore,
+    userId: String,
     displayName: String,
     usernameLabel: String,
     onLoggedOut: () -> Unit,
@@ -52,7 +55,8 @@ fun MessengerHome(
 ) {
     val appContext = LocalContext.current.applicationContext
     val viewModel: ChatViewModel = viewModel(
-        factory = remember(sessionStore, appContext) {
+        key = "chat-$userId",
+        factory = remember(sessionStore, appContext, userId) {
             ChatViewModelFactory(sessionStore, appContext)
         },
     )
@@ -123,28 +127,32 @@ fun MessengerHome(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CipherBrandBar(
-                onSearch = {
-                    overlay = "none"
-                    viewModel.leaveConversation()
-                    tabName = HomeTab.Chats.name
-                },
-                onProfile = {
-                    overlay = "none"
-                    viewModel.leaveConversation()
-                    tabName = HomeTab.Settings.name
-                },
-            )
+            if (openChatId == null) {
+                CipherBrandBar(
+                    onSearch = {
+                        overlay = "none"
+                        viewModel.leaveConversation()
+                        tabName = HomeTab.Chats.name
+                    },
+                    onProfile = {
+                        overlay = "none"
+                        viewModel.leaveConversation()
+                        tabName = HomeTab.Settings.name
+                    },
+                )
+            }
         },
         bottomBar = {
-            CipherBottomBar(
-                selected = selectedTab,
-                onSelect = { next ->
-                    overlay = "none"
-                    viewModel.leaveConversation()
-                    tabName = next.name
-                },
-            )
+            if (openChatId == null) {
+                CipherBottomBar(
+                    selected = selectedTab,
+                    onSelect = { next ->
+                        overlay = "none"
+                        viewModel.leaveConversation()
+                        tabName = next.name
+                    },
+                )
+            }
         },
     ) { padding ->
         Box(
@@ -156,8 +164,13 @@ fun MessengerHome(
                 openChatId != null -> {
                     val thread = viewModel.threads.firstOrNull { it.id == openChatId }
                     if (thread == null) {
-                        overlay = "none"
-                        viewModel.leaveConversation()
+                        MissingConversation(
+                            loading = viewModel.listLoading,
+                            onBack = {
+                                overlay = "none"
+                                viewModel.leaveConversation()
+                            },
+                        )
                     } else {
                         ConversationScreen(
                             thread = thread,
@@ -257,6 +270,39 @@ fun MessengerHome(
                     onNotice = ::notice,
                     onSignOut = viewModel::logout,
                     signingOut = viewModel.loggingOut,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MissingConversation(
+    loading: Boolean,
+    onBack: () -> Unit,
+) {
+    val spacing = CipherTheme.spacing
+    Column(modifier = Modifier.fillMaxSize()) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (loading) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            } else {
+                Text(
+                    text = "This conversation is no longer available.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(spacing.xl),
                 )
             }
         }

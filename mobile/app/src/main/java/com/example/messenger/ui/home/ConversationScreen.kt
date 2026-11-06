@@ -11,8 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +25,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddCircle
@@ -53,11 +59,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -79,18 +87,19 @@ fun ConversationScreen(
     var draft by rememberSaveable(thread.id) { mutableStateOf("") }
     var menu by rememberSaveable(thread.id) { mutableStateOf(false) }
     var sheet by rememberSaveable(thread.id) { mutableStateOf(false) }
+    val rows = conversationRows(messages)
     val listState = rememberLazyListState()
+    val keyboardBottom = WindowInsets.ime.exclude(WindowInsets.navigationBars).getBottom(LocalDensity.current)
 
-    LaunchedEffect(thread.id, messages.size) {
-        val last = messages.size + 1
-        if (last >= 0) listState.animateScrollToItem(last)
+    LaunchedEffect(thread.id, rows.size, keyboardBottom) {
+        listState.scrollToItem(rows.size + 1)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding(),
+                .windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars)),
         ) {
             ConversationHeader(
                 thread = thread,
@@ -113,29 +122,16 @@ fun ConversationScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = spacing.gutter),
-                verticalArrangement = Arrangement.spacedBy(spacing.md),
+                verticalArrangement = Arrangement.spacedBy(spacing.md, Alignment.Bottom),
             ) {
                 item(key = "banner") {
                     EncryptionBanner(modifier = Modifier.padding(top = spacing.md))
                 }
-                item(key = "today") {
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainer,
-                        ) {
-                            Text(
-                                text = "Today",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xs),
-                            )
-                        }
+                items(rows, key = { it.key }) { row ->
+                    when (row) {
+                        is ConversationRow.Day -> DayChip(row.label)
+                        is ConversationRow.Bubble -> MessageBubble(message = row.message, thread = thread)
                     }
-                }
-                items(messages, key = { it.id }) { message ->
-                    MessageBubble(message = message, thread = thread)
                 }
                 item(key = "tail") { Spacer(Modifier.height(spacing.sm)) }
             }
@@ -269,6 +265,53 @@ private fun ConversationHeader(
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
+    }
+}
+
+private sealed interface ConversationRow {
+    val key: String
+
+    data class Day(val label: String, val index: Int) : ConversationRow {
+        override val key: String = "day:$index"
+    }
+
+    data class Bubble(val message: CipherMessage) : ConversationRow {
+        override val key: String = message.id
+    }
+}
+
+private fun conversationRows(messages: List<CipherMessage>): List<ConversationRow> {
+    val rows = ArrayList<ConversationRow>(messages.size + 2)
+    var previousDay = ""
+    var dayIndex = 0
+    for (message in messages) {
+        val day = message.dayLabel.ifBlank { "Today" }
+        if (day != previousDay) {
+            rows += ConversationRow.Day(day, dayIndex)
+            dayIndex += 1
+            previousDay = day
+        }
+        rows += ConversationRow.Bubble(message)
+    }
+    return rows
+}
+
+@Composable
+private fun DayChip(label: String) {
+    val spacing = CipherTheme.spacing
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xs),
+            )
+        }
     }
 }
 
@@ -417,6 +460,9 @@ private fun Composer(
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
+                singleLine = true,
                 decorationBox = { inner ->
                     Box {
                         if (value.isEmpty()) {

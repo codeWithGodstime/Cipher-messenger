@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.messenger.BuildConfig
+import com.example.messenger.ui.components.AboveKeyboard
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
 
@@ -85,6 +86,7 @@ fun SettingsScreen(
             entry.subtitle.contains(query, ignoreCase = true)
     }
 
+    AboveKeyboard {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -171,6 +173,7 @@ fun SettingsScreen(
                 color = scheme.outline,
             )
         }
+    }
     }
 }
 

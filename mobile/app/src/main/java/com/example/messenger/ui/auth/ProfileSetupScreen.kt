@@ -8,9 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -60,7 +61,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.messenger.ui.components.AboveKeyboard
 import com.example.messenger.ui.components.CipherPrimaryButton
+import com.example.messenger.ui.components.revealAboveKeyboard
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
 import kotlinx.coroutines.launch
@@ -97,7 +100,7 @@ fun ProfileSetupScreen(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = WindowInsets.safeDrawing,
+        contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -138,11 +141,11 @@ fun ProfileSetupScreen(
             )
         },
     ) { padding ->
+        AboveKeyboard {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.gutter)
                 .padding(bottom = spacing.xl),
@@ -318,6 +321,7 @@ fun ProfileSetupScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -456,7 +460,9 @@ private fun CipherLabeledField(
         TextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .revealAboveKeyboard(),
             placeholder = {
                 Text(placeholder, style = MaterialTheme.typography.bodyMedium)
             },

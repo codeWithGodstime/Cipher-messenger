@@ -6,8 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -40,7 +41,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.messenger.ui.components.AboveKeyboard
 import com.example.messenger.ui.components.CipherPrimaryButton
+import com.example.messenger.ui.components.revealAboveKeyboard
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
 
@@ -80,14 +83,14 @@ fun UsernameAuthScreen(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = WindowInsets.safeDrawing,
+        contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
+        AboveKeyboard {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
                 .padding(horizontal = spacing.gutter),
         ) {
             Row(
@@ -153,7 +156,9 @@ fun UsernameAuthScreen(
                                 .take(32),
                         )
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .revealAboveKeyboard(),
                     singleLine = true,
                     label = { Text("Username") },
                     leadingIcon = {
@@ -188,6 +193,7 @@ fun UsernameAuthScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             )
             Spacer(Modifier.size(spacing.md))
+        }
         }
     }
 }

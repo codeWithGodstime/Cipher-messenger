@@ -35,7 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.messenger.ui.components.AboveKeyboard
 import com.example.messenger.ui.components.CipherPrimaryButton
+import com.example.messenger.ui.components.revealAboveKeyboard
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
 
@@ -60,6 +62,7 @@ fun NewContactScreen(
         focus.requestFocus()
     }
 
+    AboveKeyboard {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -113,7 +116,8 @@ fun NewContactScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(focus),
+                    .focusRequester(focus)
+                    .revealAboveKeyboard(),
                 singleLine = true,
                 prefix = {
                     Text(
@@ -199,6 +203,7 @@ fun NewContactScreen(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
             )
         }
+    }
     }
 }
 

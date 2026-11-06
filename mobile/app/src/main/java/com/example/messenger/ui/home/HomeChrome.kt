@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.messenger.ui.components.revealAboveKeyboard
 import com.example.messenger.ui.theme.CipherTheme
 
 @Composable
@@ -185,6 +186,7 @@ fun CipherSearchField(
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = spacing.sm)
+                    .revealAboveKeyboard()
                     .then(
                         if (focusRequester != null) {
                             Modifier.focusRequester(focusRequester)

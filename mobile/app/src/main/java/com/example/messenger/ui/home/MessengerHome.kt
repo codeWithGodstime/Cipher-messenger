@@ -4,7 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
@@ -124,7 +127,14 @@ fun MessengerHome(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = WindowInsets.safeDrawing,
+        contentWindowInsets = if (openChatId != null) {
+            // Chat draws behind the keyboard. Only the composer moves.
+            WindowInsets.safeDrawing
+                .exclude(WindowInsets.ime)
+                .exclude(WindowInsets.navigationBars)
+        } else {
+            WindowInsets.safeDrawing.exclude(WindowInsets.ime)
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (openChatId == null) {

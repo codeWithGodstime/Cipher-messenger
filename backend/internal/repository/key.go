@@ -15,7 +15,13 @@ type KeyRepository interface {
 	CreateIdentityKey(ctx context.Context, key *model.IdentityKey) error
 	GetIdentityKey(ctx context.Context, userID string) (*model.IdentityKey, error)
 	SaveSignedPreKey(ctx context.Context, key *model.SignedPreKey) error
-	ReplaceOneTimePreKeys(ctx context.Context, userID string, keys []model.OneTimePreKey) error
+	// CountOneTimePreKeys is how many one-time prekeys this user still has stored.
+	CountOneTimePreKeys(ctx context.Context, userID string) (int, error)
+	// AppendOneTimePreKeys adds keys to the user's pool and leaves stored keys in place.
+	// A key_id already stored with the same public key is skipped. ErrDuplicate means
+	// a key_id is stored with a different public key. ErrPreKeyLimit means the new
+	// keys would grow the pool past MaxStoredOneTimePreKeys. Neither failure writes.
+	AppendOneTimePreKeys(ctx context.Context, userID string, keys []model.OneTimePreKey) error
 	// TakePreKeyBundle reads the identity key and signed prekey and removes one
 	// one-time prekey. The one-time prekey is nil when the user has none left.
 	// Identity or signed is nil when that row is missing, and no one-time prekey
@@ -167,16 +173,78 @@ func claimOneTimePreKey(tx *gorm.DB, userID string) (*model.OneTimePreKey, error
 	return &key, nil
 }
 
-// ReplaceOneTimePreKeys stores keys as the user's current one-time prekey bundle.
-// Keys omitted from this upload are removed. The write is one transaction.
-func (r *keyRepository) ReplaceOneTimePreKeys(ctx context.Context, userID string, keys []model.OneTimePreKey) error {
+// ErrPreKeyLimit means an upload would leave the user with more one-time
+// prekeys than MaxStoredOneTimePreKeys.
+var ErrPreKeyLimit = errors.New("one-time prekey limit")
+
+// CountOneTimePreKeys counts keys still available to claim.
+func (r *keyRepository) CountOneTimePreKeys(ctx context.Context, userID string) (int, error) {
+	var count int64
+	err := r.conn(ctx).Model(&model.OneTimePreKey{}).Where("user_id = ?", userID).Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// AppendOneTimePreKeys adds keys to the user's pool and leaves stored keys in place.
+// The count and duplicate checks run in the same transaction as the insert.
+// Postgres locks the user row so two uploads cannot pass the cap together.
+func (r *keyRepository) AppendOneTimePreKeys(ctx context.Context, userID string, keys []model.OneTimePreKey) error {
 	if userID == "" || len(keys) == 0 {
 		return errors.New("one-time prekeys require a user and at least one key")
 	}
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&model.OneTimePreKey{}).Error; err != nil {
+		if tx.Dialector.Name() == "postgres" {
+			var owner model.User
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id").
+				Where("id = ?", userID).
+				First(&owner).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+		var count int64
+		if err := tx.Model(&model.OneTimePreKey{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
 			return err
 		}
-		return tx.Create(&keys).Error
+		ids := make([]int, len(keys))
+		for i, key := range keys {
+			ids[i] = key.KeyID
+		}
+		var existing []model.OneTimePreKey
+		err := tx.Where("user_id = ? AND key_id IN ?", userID, ids).Find(&existing).Error
+		if err != nil {
+			return err
+		}
+		stored := make(map[int]string, len(existing))
+		for _, row := range existing {
+			stored[row.KeyID] = row.PublicKey
+		}
+		fresh := make([]model.OneTimePreKey, 0, len(keys))
+		for _, key := range keys {
+			current, ok := stored[key.KeyID]
+			if !ok {
+				fresh = append(fresh, key)
+				continue
+			}
+			if current != key.PublicKey {
+				return ErrDuplicate
+			}
+		}
+		if int(count)+len(fresh) > model.MaxStoredOneTimePreKeys {
+			return ErrPreKeyLimit
+		}
+		if len(fresh) == 0 {
+			return nil
+		}
+		if err := tx.Create(&fresh).Error; err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return ErrDuplicate
+			}
+			return err
+		}
+		return nil
 	})
 }

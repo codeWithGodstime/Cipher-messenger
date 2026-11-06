@@ -189,52 +189,56 @@ class AuthViewModel(
 
     /**
      * Uploads a signed prekey and one-time prekeys for an identity already stored
-     * on this device. A published flag skips the upload. A failed upload leaves
-     * the flag unset so the next sign-in generates a fresh pair for this identity.
+     * on this device. Private keys are saved before the upload. A failed upload
+     * leaves them pending so the next sign-in sends the same keys.
      */
     private suspend fun uploadPreKeys(session: Session, identityKey: IdentityKeyPair): Boolean {
         val username = session.profile.username
-        val published = withContext(Dispatchers.IO) {
-            runCatching { preKeys.isPublished(username) }
-        }
-        val already = published.getOrElse { error ->
-            Log.w(TAG, "prekey lookup failed", error)
-            usernameError = "Couldn't read the prekeys stored for this username."
-            return false
-        }
-        if (already) return true
-
-        val generated = withContext(Dispatchers.IO) {
-            runCatching { preKeys.generate(identityKey) }
-                .onFailure { error -> Log.w(TAG, "prekey generation failed", error) }
+        val oneTime = withContext(Dispatchers.IO) {
+            runCatching { preKeys.prepareForUpload(username, identityKey) }
+                .onFailure { error -> Log.w(TAG, "prekey preparation failed", error) }
                 .getOrNull()
         }
-        if (generated == null) {
+        if (oneTime == null) {
+            val published = withContext(Dispatchers.IO) {
+                runCatching { preKeys.isPublished(username) }.getOrDefault(false)
+            }
+            if (published) return true
             usernameError = "Couldn't create your prekeys on this device."
             return false
         }
-        when (val signed = keys.publishSignedPreKey(
-            session.accessToken,
-            generated.signedKeyId,
-            generated.signedPublicKey,
-            generated.signature,
-        )) {
-            is KeyCall.Failed -> {
-                usernameError = signed.message
-                return false
-            }
-            KeyCall.Ok -> Unit
+        val signed = withContext(Dispatchers.IO) {
+            runCatching { preKeys.signedUpload(username) }.getOrNull()
         }
-        val oneTime = generated.oneTime.map { OneTimePreKeyRequest(it.keyId, it.publicKey) }
-        when (val uploaded = keys.publishOneTimePreKeys(session.accessToken, oneTime)) {
+        if (signed == null) {
+            usernameError = "Couldn't create your prekeys on this device."
+            return false
+        }
+        when (val uploaded = keys.publishSignedPreKey(
+            session.accessToken,
+            signed.keyId,
+            signed.publicKey,
+            signed.signature,
+        )) {
             is KeyCall.Failed -> {
                 usernameError = uploaded.message
                 return false
             }
             KeyCall.Ok -> Unit
         }
+        val body = oneTime.map { OneTimePreKeyRequest(it.keyId, it.publicKey) }
+        when (val uploaded = keys.publishOneTimePreKeys(session.accessToken, body)) {
+            is KeyCall.Failed -> {
+                if (uploaded.status != HTTP_CONFLICT) {
+                    usernameError = uploaded.message
+                    return false
+                }
+                if (!uploadFreshOneTimePreKeys(session, username)) return false
+            }
+            KeyCall.Ok -> Unit
+        }
         val saved = withContext(Dispatchers.IO) {
-            runCatching { preKeys.save(username, generated) }.isSuccess
+            runCatching { preKeys.confirmUpload(username) }.isSuccess
         }
         if (!saved) {
             usernameError = "Couldn't store your prekeys on this device."
@@ -242,8 +246,35 @@ class AuthViewModel(
         return saved
     }
 
+    /**
+     * The pending ids are already on the server with different public keys.
+     * Drops that batch and uploads the next ids. The caller confirms the upload.
+     */
+    private suspend fun uploadFreshOneTimePreKeys(session: Session, username: String): Boolean {
+        val fresh = withContext(Dispatchers.IO) {
+            runCatching {
+                preKeys.discardPending(username)
+                preKeys.stageBatch(username)
+            }.onFailure { error -> Log.w(TAG, "prekey generation failed", error) }
+                .getOrNull()
+        }
+        if (fresh.isNullOrEmpty()) {
+            usernameError = "Couldn't create your prekeys on this device."
+            return false
+        }
+        val body = fresh.map { OneTimePreKeyRequest(it.keyId, it.publicKey) }
+        return when (val uploaded = keys.publishOneTimePreKeys(session.accessToken, body)) {
+            KeyCall.Ok -> true
+            is KeyCall.Failed -> {
+                usernameError = uploaded.message
+                false
+            }
+        }
+    }
+
     private companion object {
         const val TAG = "IdentityKey"
+        const val HTTP_CONFLICT = 409
     }
 }
 

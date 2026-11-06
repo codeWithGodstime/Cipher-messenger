@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import com.example.messenger.crypto.LocalPreKeyStore
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
@@ -27,6 +29,7 @@ import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
 import com.example.messenger.data.chat.toneFor
 import com.example.messenger.data.keys.KeyRepository
+import com.example.messenger.data.keys.OneTimePreKeyRefresh
 import com.example.messenger.data.keys.PreKeyBundleCall
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +40,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Duration.Companion.milliseconds
 
 class ChatViewModel(
@@ -45,6 +50,7 @@ class ChatViewModel(
     private val authRepository: AuthRepository,
     private val repository: ChatRepository,
     private val keys: KeyRepository,
+    private val preKeys: OneTimePreKeyRefresh,
     private val socket: MessengerSocket,
 ) : ViewModel() {
     var threads by mutableStateOf<List<ChatThread>>(emptyList())
@@ -92,6 +98,7 @@ class ChatViewModel(
     private val loadedConversations = mutableSetOf<String>()
     private val localPins = mutableMapOf<String, Boolean>()
     private val peerBundles = mutableMapOf<String, PreKeyBundle>()
+    private val preKeyRefresh = Mutex()
 
     val peerContacts: List<ContactEntry>
         get() {
@@ -105,6 +112,9 @@ class ChatViewModel(
     init {
         tokens.start(viewModelScope)
         socket.start(viewModelScope)
+        viewModelScope.launch {
+            socket.opened.collect { refreshOneTimePreKeys() }
+        }
         viewModelScope.launch {
             socket.incoming.collect(::onIncomingMessage)
         }
@@ -154,6 +164,18 @@ class ChatViewModel(
 
     fun consumeListError() {
         listError = null
+    }
+
+    /** Uploads a new one-time prekey batch when the server has fewer than 10 left. */
+    fun refreshOneTimePreKeys() {
+        val username = sessionStore.usernameLabel
+        if (username.isBlank()) return
+        viewModelScope.launch {
+            preKeyRefresh.withLock {
+                val token = requireAccessToken() ?: return@withLock
+                preKeys.refresh(username, token)
+            }
+        }
     }
 
     fun logout() {
@@ -523,6 +545,7 @@ class ChatViewModel(
 
 class ChatViewModelFactory(
     private val sessionStore: SessionStore,
+    private val appContext: Context,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
@@ -534,6 +557,10 @@ class ChatViewModelFactory(
                 authRepository = ApiClient.repository,
                 repository = bound.chatRepository,
                 keys = bound.keyRepository,
+                preKeys = OneTimePreKeyRefresh(
+                    preKeys = LocalPreKeyStore(appContext),
+                    keys = bound.keyRepository,
+                ),
                 socket = ApiClient.messengerSocket(sessionStore),
             ) as T
         }

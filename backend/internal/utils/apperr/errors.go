@@ -36,6 +36,10 @@ func UsernameTaken() *Error {
 	return &Error{Status: http.StatusConflict, Code: "username_taken", Message: "Username is already taken."}
 }
 
+func OneTimePreKeyTaken() *Error {
+	return &Error{Status: http.StatusConflict, Code: "prekey_id_taken", Message: "A one-time prekey with this key_id is already stored with a different public key."}
+}
+
 func Validation(message string) *Error {
 	return &Error{Status: http.StatusBadRequest, Code: "validation_error", Message: message}
 }

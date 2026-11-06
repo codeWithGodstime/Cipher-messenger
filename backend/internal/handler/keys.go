@@ -86,6 +86,20 @@ func (h *KeysHandler) UploadSignedPreKey(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *KeysHandler) OneTimePreKeyCount(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, apperr.Unauthorized())
+		return
+	}
+	count, err := h.keyService.CountOneTimePreKeys(c.Request.Context(), userID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, httpapi.OneTimePreKeyCount{Count: count})
+}
+
 func (h *KeysHandler) UploadOneTimePreKeys(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {

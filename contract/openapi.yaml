@@ -588,8 +588,35 @@ paths:
       tags:
       - Messenger
   /keys/one-time-prekeys:
+    get:
+      description: Returns how many one-time prekeys are still stored for the signed-in user. The client uploads more when this count is below 10. The response does not include the keys.
+      operationId: oneTimePreKeyCount
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OneTimePreKeyCount'
+          description: The number of one-time prekeys still available.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Count remaining one-time prekeys
+      tags:
+      - Messenger
     post:
-      description: Replaces the signed-in user's one-time prekeys with the uploaded list. prekeys must contain 1 to 100 keys. Each key_id must be unique in the list. Keys left out of the list are removed.
+      description: Adds one-time prekeys to the signed-in user's pool. Keys already stored stay in place. prekeys must contain 1 to 100 keys. A key_id already stored with the same public key is left unchanged. A key_id stored with a different public key is rejected and nothing is written. The account can hold at most 200 one-time prekeys.
       operationId: uploadOneTimePreKeys
       requestBody:
         content:
@@ -599,19 +626,25 @@ paths:
         required: true
       responses:
         "204":
-          description: The one-time prekeys were stored.
+          description: The one-time prekeys were added. A key already stored with the same public key is left as it is.
         "400":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: The JSON body is invalid, or prekeys is empty, larger than 100, or contains a duplicate or invalid key.
+          description: The JSON body is invalid, prekeys is empty or larger than 100, a key is invalid or duplicated in the list, or the account would have more than 200 one-time prekeys.
         "401":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Missing or invalid access token.
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: A key_id in prekeys is already stored for this account with a different public key.
         "500":
           content:
             application/json:
@@ -964,6 +997,14 @@ components:
       - key_id
       - public_key
       type: object
+    OneTimePreKeyCount:
+      properties:
+        count:
+          description: One-time prekeys still available for other users to claim.
+          type: integer
+      required:
+      - count
+      type: object
     OpenConversation:
       properties:
         user_id:
@@ -1110,7 +1151,7 @@ components:
     UploadOneTimePreKeysRequest:
       properties:
         prekeys:
-          description: 1 to 100 one-time prekeys. Replaces one-time prekeys already stored for this account.
+          description: 1 to 100 new one-time prekeys. Added to one-time prekeys already stored for this account.
           items:
             $ref: '#/components/schemas/OneTimePreKey'
           maxItems: 100

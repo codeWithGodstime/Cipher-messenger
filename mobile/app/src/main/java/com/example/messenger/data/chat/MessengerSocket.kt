@@ -50,6 +50,13 @@ class MessengerSocket(
     )
     val userSearch: SharedFlow<UserSearchFrame> = _userSearch.asSharedFlow()
 
+    private val _opened = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    /** Emits after each successful socket open, including reconnects. */
+    val opened: SharedFlow<Unit> = _opened.asSharedFlow()
+
     @Volatile
     private var socket: WebSocket? = null
 
@@ -130,6 +137,7 @@ class MessengerSocket(
                     override fun onOpen(webSocket: WebSocket, response: Response) {
                         socket = webSocket
                         connected.set(true)
+                        _opened.tryEmit(Unit)
                         if (cont.isActive) cont.resume(true)
                     }
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ type KeyService interface {
 	CreateIdentityKey(ctx context.Context, userID string, publicKey string) error
 	GetIdentityKey(ctx context.Context, userID string) (*model.IdentityKey, error)
 	UploadSignedPreKey(ctx context.Context, userID string, keyID int, publicKey, signature string) error
+	// CountOneTimePreKeys is how many one-time prekeys this user still has for others to claim.
+	CountOneTimePreKeys(ctx context.Context, userID string) (int, error)
+	// UploadOneTimePreKeys adds prekeys to the user's pool. It does not remove keys already stored.
 	UploadOneTimePreKeys(ctx context.Context, userID string, prekeys []OneTimePreKeyInput) error
 	// GetPreKeyBundle returns the peer's identity key, signed prekey, and one
 	// one-time prekey. The one-time prekey is removed from the peer's pool.
@@ -153,7 +157,22 @@ func (s *keyService) UploadOneTimePreKeys(ctx context.Context, userID string, pr
 			CreatedAt: now,
 		})
 	}
-	return s.repo.ReplaceOneTimePreKeys(ctx, userID, rows)
+	err := s.repo.AppendOneTimePreKeys(ctx, userID, rows)
+	if errors.Is(err, repository.ErrDuplicate) {
+		return apperr.OneTimePreKeyTaken()
+	}
+	if errors.Is(err, repository.ErrPreKeyLimit) {
+		return apperr.Validation("This account already has the maximum number of one-time prekeys.")
+	}
+	return err
+}
+
+func (s *keyService) CountOneTimePreKeys(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, apperr.Validation("user_id is required.")
+	}
+	return s.repo.CountOneTimePreKeys(ctx, userID)
 }
 
 // libsignal EC public keys serialize to 33 bytes (type byte + 32-byte key).

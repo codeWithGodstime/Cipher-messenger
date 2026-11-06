@@ -2,6 +2,7 @@ package com.example.messenger.data.keys
 
 import com.example.messenger.data.api.CreateIdentityKeyRequest
 import com.example.messenger.data.api.MessengerApi
+import com.example.messenger.data.api.OneTimePreKeyCount
 import com.example.messenger.data.api.OneTimePreKeyRequest
 import com.example.messenger.data.api.PreKeyBundle
 import com.example.messenger.data.api.UploadOneTimePreKeysRequest
@@ -15,7 +16,12 @@ import java.io.IOException
 
 sealed interface KeyCall {
     data object Ok : KeyCall
-    data class Failed(val message: String) : KeyCall
+    data class Failed(val message: String, val status: Int = 0) : KeyCall
+}
+
+sealed interface OneTimePreKeyCountCall {
+    data class Success(val count: Int) : OneTimePreKeyCountCall
+    data class Failed(val message: String) : OneTimePreKeyCountCall
 }
 
 sealed interface PreKeyBundleCall {
@@ -66,6 +72,25 @@ class KeyRepository(
         }
     }
 
+    /** How many one-time prekeys the server still holds for the signed-in user. */
+    suspend fun oneTimePreKeyCount(accessToken: String): OneTimePreKeyCountCall {
+        return try {
+            val response = api.oneTimePreKeyCount(authorization = bearer(accessToken))
+            if (!response.isSuccessful) {
+                OneTimePreKeyCountCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+            } else {
+                val count = json.decodeFromString<OneTimePreKeyCount>(
+                    response.body()?.string().orEmpty(),
+                )
+                OneTimePreKeyCountCall.Success(count.count)
+            }
+        } catch (_: IOException) {
+            OneTimePreKeyCountCall.Failed("Can't reach the server. Check the API address and your connection.")
+        } catch (_: SerializationException) {
+            OneTimePreKeyCountCall.Failed("The server returned a response the app could not read.")
+        }
+    }
+
     /**
      * Claims the peer's identity key, signed prekey, and one one-time prekey.
      * The server removes that one-time prekey, so call this once per new session.
@@ -92,7 +117,10 @@ class KeyRepository(
         return try {
             val response = call()
             if (!response.isSuccessful) {
-                KeyCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+                KeyCall.Failed(
+                    message = errorMessage(json, response.code(), response.errorBody()?.string()),
+                    status = response.code(),
+                )
             } else {
                 KeyCall.Ok
             }

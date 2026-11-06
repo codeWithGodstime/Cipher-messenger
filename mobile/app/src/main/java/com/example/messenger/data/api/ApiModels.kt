@@ -134,6 +134,11 @@ data class UploadOneTimePreKeysRequest(
 )
 
 @Serializable
+data class OneTimePreKeyCount(
+    val count: Int,
+)
+
+@Serializable
 data class SignedPreKey(
     @SerialName("key_id") val keyId: Int,
     @SerialName("public_key") val publicKey: String,

@@ -218,10 +218,15 @@ func (k *OneTimePreKey) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// OneTimePreKeyCount is the body of GET /keys/one-time-prekeys.
+type OneTimePreKeyCount struct {
+	Count int `json:"count" required:"true" description:"One-time prekeys still available for other users to claim."`
+}
+
 // UploadOneTimePreKeysRequest is the body of POST /keys/one-time-prekeys.
-// The list replaces one-time prekeys already stored for the account.
+// The list is added to one-time prekeys already stored for the account.
 type UploadOneTimePreKeysRequest struct {
-	PreKeys []OneTimePreKey `json:"prekeys" required:"true" nullable:"false" minItems:"1" maxItems:"100" description:"1 to 100 one-time prekeys. Replaces one-time prekeys already stored for this account."`
+	PreKeys []OneTimePreKey `json:"prekeys" required:"true" nullable:"false" minItems:"1" maxItems:"100" description:"1 to 100 new one-time prekeys. Added to one-time prekeys already stored for this account."`
 }
 
 // UnmarshalJSON requires prekeys so null is not treated as an empty bundle.

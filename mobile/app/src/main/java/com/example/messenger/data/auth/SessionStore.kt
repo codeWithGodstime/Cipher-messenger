@@ -85,7 +85,7 @@ class SessionStore(context: Context) {
     }
 
     fun clear() {
-        prefs.edit().clear().apply()
+        prefs.edit().clear().commit()
     }
 
     private fun expiresAtFrom(expiresInSeconds: Int): Long {

@@ -1,13 +1,14 @@
 package handler
 
 import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
 	"messenger/backend/internal/middleware"
 	"messenger/backend/internal/service"
 	"messenger/backend/internal/utils/apperr"
 	"messenger/backend/internal/utils/httpapi"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
 )
 
 type KeysHandler struct {
@@ -36,5 +37,19 @@ func (h *KeysHandler) CreateIdentityKey(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, "Identity key created successfully")
+	c.Status(http.StatusNoContent)
+}
+
+func (h *KeysHandler) GetIdentityKey(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, apperr.Unauthorized())
+		return
+	}
+	key, err := h.keyService.GetIdentityKey(c.Request.Context(), userID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, httpapi.NewIdentityKey(key))
 }

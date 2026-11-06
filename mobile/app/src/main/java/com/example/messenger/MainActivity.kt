@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,13 +30,20 @@ class MainActivity : ComponentActivity() {
                 var signedIn by remember { mutableStateOf(sessionStore.isLoggedIn) }
                 var displayName by remember { mutableStateOf(sessionStore.displayName) }
                 var usernameLabel by remember { mutableStateOf(sessionStore.usernameLabel) }
+                var authGeneration by remember { mutableIntStateOf(0) }
+                var openLogin by remember { mutableStateOf(false) }
+
+                fun leaveSession() {
+                    if (!signedIn) return
+                    displayName = ""
+                    usernameLabel = ""
+                    signedIn = false
+                    openLogin = true
+                    authGeneration++
+                }
 
                 LaunchedEffect(tokenRefresher) {
-                    tokenRefresher.sessionLost.collect {
-                        signedIn = false
-                        displayName = ""
-                        usernameLabel = ""
-                    }
+                    tokenRefresher.sessionLost.collect { leaveSession() }
                 }
 
                 if (signedIn) {
@@ -42,17 +51,23 @@ class MainActivity : ComponentActivity() {
                         sessionStore = sessionStore,
                         displayName = displayName,
                         usernameLabel = usernameLabel,
+                        onLoggedOut = { leaveSession() },
                     )
                 } else {
-                    AuthApp(
-                        sessionStore = sessionStore,
-                        onEntered = { name, username ->
-                            sessionStore.markLoggedIn(name, username)
-                            displayName = name
-                            usernameLabel = username
-                            signedIn = true
-                        },
-                    )
+                    key(authGeneration) {
+                        AuthApp(
+                            sessionStore = sessionStore,
+                            sessionKey = authGeneration,
+                            startOnLogin = openLogin,
+                            onEntered = { name, username ->
+                                sessionStore.markLoggedIn(name, username)
+                                displayName = name
+                                usernameLabel = username
+                                openLogin = false
+                                signedIn = true
+                            },
+                        )
+                    }
                 }
             }
         }

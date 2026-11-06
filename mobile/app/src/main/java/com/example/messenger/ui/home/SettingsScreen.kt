@@ -136,6 +136,10 @@ fun SettingsScreen(
             modifier = Modifier.padding(top = spacing.md),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
+            SignOutRow(
+                busy = signingOut,
+                onClick = onSignOut,
+            )
             if (entries.isEmpty()) {
                 Text(
                     text = "No settings match that search.",
@@ -149,10 +153,6 @@ fun SettingsScreen(
                     onNotice("${entry.title} is not connected in this build.")
                 })
             }
-            SignOutRow(
-                busy = signingOut,
-                onClick = onSignOut,
-            )
         }
         Column(
             modifier = Modifier
@@ -378,7 +378,7 @@ private fun SignOutRow(
                 } else {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = null,
+                        contentDescription = "Log out",
                         tint = scheme.error,
                         modifier = Modifier.size(20.dp),
                     )
@@ -386,12 +386,12 @@ private fun SignOutRow(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (busy) "Signing out…" else "Sign out",
+                    text = if (busy) "Logging out…" else "Log out",
                     style = MaterialTheme.typography.labelLarge,
                     color = scheme.error,
                 )
                 Text(
-                    text = "End this session on this device",
+                    text = "Clear this device and return to login",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )

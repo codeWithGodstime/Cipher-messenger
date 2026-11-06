@@ -162,7 +162,13 @@ type UserSearchHit struct {
 }
 
 type CreateIdentityKeyRequest struct {
-	PublicKey string `json:"public_key" required:"true"`
+	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded libsignal identity public key (33 bytes)."`
+}
+
+// IdentityKey is the signed-in user's stored identity public key.
+type IdentityKey struct {
+	PublicKey string    `json:"public_key" required:"true" description:"Base64-encoded libsignal identity public key (33 bytes)."`
+	CreatedAt time.Time `json:"created_at" required:"true"`
 }
 
 // Error is the JSON body of a failed request.
@@ -235,6 +241,13 @@ func NewConversation(id string, peer Profile, last *model.Message, unread int, c
 		out.LastMessage = &msg
 	}
 	return out
+}
+
+func NewIdentityKey(key *model.IdentityKey) IdentityKey {
+	return IdentityKey{
+		PublicKey: key.PublicKey,
+		CreatedAt: key.CreatedAt,
+	}
 }
 
 func NewContact(id string, peer Profile, createdAt time.Time) Contact {

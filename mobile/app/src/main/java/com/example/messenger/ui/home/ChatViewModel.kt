@@ -25,8 +25,13 @@ import com.example.messenger.data.chat.normalizeUsernameQuery
 import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
 import com.example.messenger.data.chat.toneFor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
@@ -65,6 +70,13 @@ class ChatViewModel(
     var usernameSearchError by mutableStateOf<String?>(null)
         private set
 
+    private val loggedOutEvents = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val loggedOut: SharedFlow<Unit> = loggedOutEvents.asSharedFlow()
+
+    private val logoutJobs = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var userId: String = sessionStore.userId.orEmpty()
     private val usernameQueries = MutableSharedFlow<String>(
         extraBufferCapacity = 1,
@@ -141,14 +153,13 @@ class ChatViewModel(
 
     fun logout() {
         if (loggingOut) return
-        viewModelScope.launch {
-            loggingOut = true
-            val token = sessionStore.accessToken
-            if (!token.isNullOrBlank()) {
-                authRepository.logout(token)
-            }
-            socket.stop()
-            tokens.signOut()
+        loggingOut = true
+        val token = sessionStore.accessToken
+        socket.stop()
+        tokens.signOut()
+        loggedOutEvents.tryEmit(Unit)
+        if (!token.isNullOrBlank()) {
+            logoutJobs.launch { authRepository.logout(token) }
         }
     }
 

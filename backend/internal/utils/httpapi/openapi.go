@@ -166,6 +166,32 @@ func openAPI() (*openapi31.Spec, error) {
 			},
 		},
 		{
+			method: http.MethodGet, path: "/keys/", id: "getIdentityKey",
+			summary:     "Get the identity public key",
+			description: "Returns the identity public key stored for the signed-in user.",
+			auth:        true,
+			responses: []response{
+				{http.StatusOK, new(IdentityKey), "The stored identity public key."},
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusNotFound, "This account has no identity key."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodPost, path: "/keys/", id: "createIdentityKey",
+			summary:     "Upload an identity public key",
+			description: "Stores the signed-in user's libsignal identity public key. Uploading again replaces the stored key.",
+			auth:        true,
+			request:     new(CreateIdentityKeyRequest),
+			bodyOnly:    true,
+			responses: []response{
+				{http.StatusNoContent, new(struct{}), "The identity public key was stored."},
+				failure(http.StatusBadRequest, "The JSON body or public_key is invalid."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
 			method: http.MethodGet, path: "/users/lookup", id: "lookupUser",
 			summary:     "Look up a user by username",
 			description: "Finds a registered user by exact username handle.",

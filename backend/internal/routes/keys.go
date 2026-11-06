@@ -7,5 +7,6 @@ import (
 )
 
 func registerKeys(r *gin.Engine, keys *handler.KeysHandler, authenticate gin.HandlerFunc) {
+	r.GET("/keys/", authenticate, keys.GetIdentityKey)
 	r.POST("/keys/", authenticate, keys.CreateIdentityKey)
 }

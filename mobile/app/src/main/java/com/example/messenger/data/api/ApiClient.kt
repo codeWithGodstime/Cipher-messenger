@@ -7,6 +7,7 @@ import com.example.messenger.data.auth.TokenAuthenticator
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatRepository
 import com.example.messenger.data.chat.MessengerSocket
+import com.example.messenger.data.keys.KeyRepository
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,6 +40,9 @@ object ApiClient {
     val chatRepository: ChatRepository
         get() = requireSession().chatRepository
 
+    val keyRepository: KeyRepository
+        get() = requireSession().keyRepository
+
     fun tokenRefresher(sessionStore: SessionStore): TokenRefresher =
         bind(sessionStore).tokenRefresher
 
@@ -68,6 +72,7 @@ object ApiClient {
             tokenRefresher = refresher,
             http = http,
             chatRepository = ChatRepository(api, json),
+            keyRepository = KeyRepository(api, json),
         )
         session = bound
         return bound
@@ -89,5 +94,6 @@ object ApiClient {
         val tokenRefresher: TokenRefresher,
         val http: OkHttpClient,
         val chatRepository: ChatRepository,
+        val keyRepository: KeyRepository,
     )
 }

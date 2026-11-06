@@ -111,6 +111,11 @@ data class SendMessageRequest(
 )
 
 @Serializable
+data class CreateIdentityKeyRequest(
+    @SerialName("public_key") val publicKey: String,
+)
+
+@Serializable
 data class WsUserHit(
     val id: String,
     val username: String,

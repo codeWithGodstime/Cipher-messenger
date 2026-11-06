@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.auth.SessionStore
@@ -29,13 +30,21 @@ private enum class AuthRoute {
 fun AuthApp(
     sessionStore: SessionStore,
     modifier: Modifier = Modifier,
+    sessionKey: Int = 0,
+    startOnLogin: Boolean = false,
     onEntered: (displayName: String, usernameLabel: String) -> Unit = { _, _ -> },
 ) {
+    val appContext = LocalContext.current.applicationContext
     val viewModel: AuthViewModel = viewModel(
-        factory = AuthViewModelFactory(ApiClient.repository, sessionStore),
+        key = "auth-$sessionKey",
+        factory = AuthViewModelFactory(ApiClient.repository, sessionStore, appContext),
     )
-    var routeName by rememberSaveable { mutableStateOf(AuthRoute.Welcome.name) }
-    var modeName by rememberSaveable { mutableStateOf(AuthMode.Signup.name) }
+    var routeName by rememberSaveable {
+        mutableStateOf(if (startOnLogin) AuthRoute.Username.name else AuthRoute.Welcome.name)
+    }
+    var modeName by rememberSaveable {
+        mutableStateOf(if (startOnLogin) AuthMode.Login.name else AuthMode.Signup.name)
+    }
     var username by rememberSaveable { mutableStateOf("") }
     val route = AuthRoute.valueOf(routeName)
     val mode = AuthMode.valueOf(modeName)

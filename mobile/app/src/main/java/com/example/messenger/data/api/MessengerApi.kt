@@ -85,4 +85,10 @@ interface MessengerApi {
         @Path("id") conversationId: String,
         @Body body: SendMessageRequest,
     ): Response<ResponseBody>
+
+    @POST("keys/")
+    suspend fun createIdentityKey(
+        @Header("Authorization") authorization: String,
+        @Body body: CreateIdentityKeyRequest,
+    ): Response<ResponseBody>
 }

@@ -42,6 +42,7 @@ fun MessengerHome(
     sessionStore: SessionStore,
     displayName: String,
     usernameLabel: String,
+    onLoggedOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: ChatViewModel = viewModel(
@@ -81,6 +82,10 @@ fun MessengerHome(
 
     BackHandler(enabled = overlay != "none") {
         popOverlay()
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.loggedOut.collect { onLoggedOut() }
     }
 
     LaunchedEffect(viewModel.notice) {

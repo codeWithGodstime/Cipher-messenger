@@ -56,14 +56,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -93,14 +92,26 @@ fun ConversationScreen(
     val rows = conversationRows(messages)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
-    var composerHeight by remember { mutableStateOf(0.dp) }
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val keyboard = LocalSoftwareKeyboardController.current
 
+    // Newest row is index 0, so the open end of the thread stays in view
+    // when the list gets shorter as the keyboard opens.
     LaunchedEffect(thread.id, rows.size) {
-        listState.scrollToItem(rows.size + 1)
+        listState.scrollToItem(0)
+    }
+    LaunchedEffect(imeBottom) {
+        if (listState.firstVisibleItemIndex <= 1) {
+            listState.scrollToItem(0)
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
+        ) {
             ConversationHeader(
                 thread = thread,
                 menuOpen = menu,
@@ -118,44 +129,37 @@ fun ConversationScreen(
             )
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.navigationBars)
                     .padding(horizontal = spacing.gutter),
-                contentPadding = PaddingValues(bottom = composerHeight),
+                contentPadding = PaddingValues(vertical = spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(spacing.md, Alignment.Bottom),
             ) {
-                item(key = "banner") {
-                    EncryptionBanner(modifier = Modifier.padding(top = spacing.md))
-                }
-                items(rows, key = { it.key }) { row ->
+                item(key = "tail") { Spacer(Modifier.height(spacing.xs)) }
+                items(rows.asReversed(), key = { it.key }) { row ->
                     when (row) {
                         is ConversationRow.Day -> DayChip(row.label)
                         is ConversationRow.Bubble -> MessageBubble(message = row.message, thread = thread)
                     }
                 }
-                item(key = "tail") { Spacer(Modifier.height(spacing.sm)) }
+                item(key = "banner") { EncryptionBanner() }
             }
-        }
-        Composer(
-            value = draft,
-            onValueChange = { draft = it },
-            onAttach = { sheet = true },
-            onSend = {
-                val body = draft.trim()
-                if (body.isEmpty()) return@Composer
-                onSend(body)
-                draft = ""
-            },
-            onNotice = onNotice,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-                .onSizeChanged { size ->
-                    composerHeight = with(density) { size.height.toDp() }
+            Composer(
+                value = draft,
+                onValueChange = { draft = it },
+                onAttach = { sheet = true },
+                onSend = {
+                    val body = draft.trim()
+                    if (body.isEmpty()) return@Composer
+                    onSend(body)
+                    draft = ""
+                    keyboard?.show()
                 },
-        )
+                onNotice = onNotice,
+            )
+        }
         if (sheet) {
             AttachmentSheet(
                 onDismiss = { sheet = false },

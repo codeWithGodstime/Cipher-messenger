@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -128,7 +129,8 @@ fun MessengerHome(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = if (openChatId != null) {
-            // Chat draws behind the keyboard. Only the composer moves.
+            // The conversation applies the keyboard inset itself so the thread
+            // resizes above the composer instead of drawing under the keyboard.
             WindowInsets.safeDrawing
                 .exclude(WindowInsets.ime)
                 .exclude(WindowInsets.navigationBars)
@@ -165,6 +167,12 @@ fun MessengerHome(
             }
         },
     ) { padding ->
+        val density = LocalDensity.current
+        val keyboardLift = with(density) {
+            val imePx = WindowInsets.ime.getBottom(this)
+            val belowPx = padding.calculateBottomPadding().roundToPx()
+            (imePx - belowPx).coerceAtLeast(0).toDp()
+        }
         Box(
             modifier = Modifier
                 .padding(padding)
@@ -270,6 +278,7 @@ fun MessengerHome(
                                 viewModel.clearUsernameSearch()
                                 overlay = "new"
                             },
+                            modifier = Modifier.padding(bottom = keyboardLift),
                         )
                     }
                 }

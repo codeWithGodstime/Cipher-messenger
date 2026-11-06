@@ -24,7 +24,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", javaStringLiteral(apiBaseUrl))
+        ndk {
+            // Phones are arm64. Android Studio emulators are usually x86_64.
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
+
+    // AGP only strips native debug symbols when this NDK is installed.
+    // The plugin default is 28.2, which is not installed, so stripping was skipped
+    // and each libsignal binary stayed about 110 MB.
+    ndkVersion = "27.1.12297006"
 
     buildTypes {
         release {
@@ -44,11 +53,16 @@ android {
         buildConfig = true
     }
     packaging {
+        jniLibs {
+            // Ships inside libsignal-android for libsignal's own tests.
+            excludes += "**/libsignal_jni_testing.so"
+        }
         resources {
+            // Desktop binaries from libsignal-client. These are not Android libraries.
             excludes += setOf(
                 "libsignal_jni*.dylib",
+                "libsignal_jni*.so",
                 "signal_jni*.dll",
-                "**/libsignal_jni_testing.so",
             )
         }
     }

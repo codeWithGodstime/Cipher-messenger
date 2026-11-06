@@ -163,7 +163,10 @@ fun NewContactScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
                         if (usernameSearchLoading) {
                             item(key = "refresh") {
                                 Text(

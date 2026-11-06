@@ -21,6 +21,7 @@ import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
 import com.example.messenger.data.api.WsUserHit
 import com.example.messenger.data.auth.AuthRepository
+import com.example.messenger.data.auth.ProfileCall
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatCall
@@ -83,6 +84,8 @@ class ChatViewModel(
     var activeConversationId by mutableStateOf<String?>(null)
         private set
     var loggingOut by mutableStateOf(false)
+        private set
+    var savingName by mutableStateOf(false)
         private set
     var usernameResults by mutableStateOf<List<ContactEntry>>(emptyList())
         private set
@@ -188,6 +191,33 @@ class ChatViewModel(
             preKeyRefresh.withLock {
                 val token = requireAccessToken() ?: return@withLock
                 preKeys.refresh(username, token)
+            }
+        }
+    }
+
+    fun updateDisplayName(raw: String, onSaved: (String) -> Unit) {
+        if (savingName) return
+        val name = raw.trim()
+        if (name.isEmpty() || name.length > 64) {
+            notice = "Display name must be 1 to 64 characters."
+            return
+        }
+        viewModelScope.launch {
+            val token = requireAccessToken() ?: run {
+                notice = "Sign in again before changing your name."
+                return@launch
+            }
+            savingName = true
+            try {
+                when (val result = authRepository.updateDisplayName(token, name)) {
+                    is ProfileCall.Success -> {
+                        sessionStore.rememberProfile(result.profile)
+                        onSaved(result.profile.displayName)
+                    }
+                    is ProfileCall.Failed -> notice = result.message
+                }
+            } finally {
+                savingName = false
             }
         }
     }

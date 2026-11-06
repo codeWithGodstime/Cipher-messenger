@@ -153,59 +153,24 @@ fun NewChatScreen(
                 .fillMaxWidth()
                 .padding(horizontal = spacing.gutter, vertical = spacing.sm),
         )
+        if (trimmedQuery.isNotEmpty()) {
+            UsernameResults(
+                loading = usernameSearchLoading,
+                error = usernameSearchError,
+                results = usernameResults,
+                onOpenPeer = onOpenPeer,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.gutter),
+            )
+        }
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = spacing.gutter),
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
-            if (trimmedQuery.isNotEmpty()) {
-                item(key = "people-label") { SectionLabel("Usernames") }
-                val searchError = usernameSearchError
-                when {
-                    searchError != null -> item(key = "people-error") {
-                        Text(
-                            text = searchError,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = spacing.sm),
-                        )
-                    }
-                    usernameSearchLoading && usernameResults.isEmpty() -> item(key = "people-loading") {
-                        Text(
-                            text = "Searching…",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = spacing.sm),
-                        )
-                    }
-                    usernameResults.isEmpty() -> item(key = "people-empty") {
-                        Text(
-                            text = "No usernames match.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = spacing.sm),
-                        )
-                    }
-                    else -> {
-                        if (usernameSearchLoading) {
-                            item(key = "people-refresh") {
-                                Text(
-                                    text = "Searching…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        items(usernameResults, key = { "person-${it.id}" }) { person ->
-                            UsernameHitRow(
-                                person = person,
-                                onClick = { onOpenPeer(person.id) },
-                            )
-                        }
-                    }
-                }
-            }
             item(key = "actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                     ActionCard(
@@ -304,6 +269,66 @@ fun NewChatScreen(
                         text = "All contacts and messages are secured with quantum-resistant encryption.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UsernameResults(
+    loading: Boolean,
+    error: String?,
+    results: List<ContactEntry>,
+    onOpenPeer: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = CipherTheme.spacing
+    LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        item(key = "people-label") { SectionLabel("Usernames") }
+        when {
+            error != null -> item(key = "people-error") {
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = spacing.sm),
+                )
+            }
+            loading && results.isEmpty() -> item(key = "people-loading") {
+                Text(
+                    text = "Searching…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = spacing.sm),
+                )
+            }
+            results.isEmpty() -> item(key = "people-empty") {
+                Text(
+                    text = "No usernames match.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = spacing.sm),
+                )
+            }
+            else -> {
+                if (loading) {
+                    item(key = "people-refresh") {
+                        Text(
+                            text = "Searching…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                items(results, key = { "person-${it.id}" }) { person ->
+                    UsernameHitRow(
+                        person = person,
+                        onClick = { onOpenPeer(person.id) },
                     )
                 }
             }

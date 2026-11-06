@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
                                 userId = userId,
                                 displayName = displayName,
                                 usernameLabel = usernameLabel,
+                                onDisplayNameChanged = { name -> displayName = name },
                                 onLoggedOut = { leaveSession() },
                             )
                         }

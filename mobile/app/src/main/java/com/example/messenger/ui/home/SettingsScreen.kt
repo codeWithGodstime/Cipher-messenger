@@ -12,11 +12,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
@@ -31,13 +35,18 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +56,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.messenger.BuildConfig
 import com.example.messenger.ui.components.AboveKeyboard
+import com.example.messenger.ui.components.revealAboveKeyboard
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
 
@@ -63,15 +73,25 @@ fun SettingsScreen(
     usernameLabel: String,
     onNotice: (String) -> Unit,
     onSignOut: () -> Unit,
+    onSaveDisplayName: (String) -> Unit = {},
     signingOut: Boolean = false,
+    savingName: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
     val scheme = MaterialTheme.colorScheme
-    val name = displayName.ifBlank { "Alex Vance" }
-    val username = usernameLabel.ifBlank { "alex" }.let { if (it.startsWith("@")) it else "@$it" }
+    val name = displayName.trim()
+    val handle = usernameLabel.trim().removePrefix("@")
+    val username = if (handle.isBlank()) "" else "@$handle"
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var editingName by rememberSaveable { mutableStateOf(false) }
+    var nameDraft by rememberSaveable { mutableStateOf(name) }
+    LaunchedEffect(savingName, displayName) {
+        if (!savingName && editingName && name.isNotEmpty() && name == nameDraft.trim()) {
+            editingName = false
+        }
+    }
     val entries = listOf(
         SettingsEntry("Account", "Security notifications, change username", Icons.Filled.Key, scheme.primary),
         SettingsEntry("Privacy", "Last seen, profile photo, read receipts, app lock", Icons.Filled.Shield, scheme.secondary),
@@ -130,8 +150,26 @@ fun SettingsScreen(
             )
         }
         ProfileCard(
-            name = name,
+            name = name.ifBlank { "Add a display name" },
+            nameMuted = name.isBlank(),
             phone = username,
+            editing = editingName,
+            draft = nameDraft,
+            saving = savingName,
+            onDraftChange = { nameDraft = it.take(64) },
+            onEdit = {
+                nameDraft = name
+                editingName = true
+            },
+            onCancel = { editingName = false },
+            onSave = {
+                val next = nameDraft.trim()
+                if (next == name) {
+                    editingName = false
+                } else {
+                    onSaveDisplayName(next)
+                }
+            },
             onQr = { onNotice("Your QR code is not connected in this build.") },
         )
         Column(
@@ -180,7 +218,15 @@ fun SettingsScreen(
 @Composable
 private fun ProfileCard(
     name: String,
+    nameMuted: Boolean,
     phone: String,
+    editing: Boolean,
+    draft: String,
+    saving: Boolean,
+    onDraftChange: (String) -> Unit,
+    onEdit: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
     onQr: () -> Unit,
 ) {
     val spacing = CipherTheme.spacing
@@ -214,7 +260,7 @@ private fun ProfileCard(
                 ) {
                     Box {
                         CipherAvatar(
-                            initials = initialsFor(name),
+                            initials = initialsFor(if (nameMuted) phone.removePrefix("@") else name),
                             tone = AvatarTone.Cobalt,
                             size = 56.dp,
                             contentDescription = name,
@@ -235,12 +281,75 @@ private fun ProfileCard(
                             )
                         }
                     }
-                    Column {
-                        Text(
-                            text = name,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = scheme.onSurface,
-                        )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        ) {
+                            if (editing) {
+                                OutlinedTextField(
+                                    value = draft,
+                                    onValueChange = onDraftChange,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .revealAboveKeyboard(),
+                                    singleLine = true,
+                                    placeholder = { Text("Display name") },
+                                    enabled = !saving,
+                                    keyboardOptions = KeyboardOptions(
+                                        capitalization = KeyboardCapitalization.Words,
+                                        imeAction = ImeAction.Done,
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = { if (!saving) onSave() },
+                                    ),
+                                )
+                                IconButton(
+                                    onClick = onSave,
+                                    enabled = !saving && draft.trim().isNotEmpty(),
+                                ) {
+                                    if (saving) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Save display name",
+                                            tint = scheme.primary,
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = onCancel,
+                                    enabled = !saving,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Cancel",
+                                        tint = scheme.error,
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = name,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = if (nameMuted) scheme.onSurfaceVariant else scheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                IconButton(onClick = onEdit) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = "Edit display name",
+                                        tint = scheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
                         Text(
                             text = phone,
                             style = MaterialTheme.typography.bodySmall,
@@ -408,8 +517,8 @@ private fun SignOutRow(
 private fun SettingsPreview() {
     MessengerTheme {
         SettingsScreen(
-            displayName = "Alex Vance",
-            usernameLabel = "alex",
+            displayName = "",
+            usernameLabel = "maya",
             onNotice = {},
             onSignOut = {},
         )

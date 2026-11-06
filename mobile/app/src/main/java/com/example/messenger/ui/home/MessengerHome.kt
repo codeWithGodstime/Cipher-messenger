@@ -54,6 +54,7 @@ fun MessengerHome(
     userId: String,
     displayName: String,
     usernameLabel: String,
+    onDisplayNameChanged: (String) -> Unit,
     onLoggedOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -288,7 +289,11 @@ fun MessengerHome(
                     usernameLabel = usernameLabel,
                     onNotice = ::notice,
                     onSignOut = viewModel::logout,
+                    onSaveDisplayName = { name ->
+                        viewModel.updateDisplayName(name, onDisplayNameChanged)
+                    },
                     signingOut = viewModel.loggingOut,
+                    savingName = viewModel.savingName,
                 )
             }
         }

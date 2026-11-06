@@ -134,10 +134,30 @@ data class UploadOneTimePreKeysRequest(
 )
 
 @Serializable
+data class SignedPreKey(
+    @SerialName("key_id") val keyId: Int,
+    @SerialName("public_key") val publicKey: String,
+    val signature: String,
+)
+
+/**
+ * Public keys for starting a Signal session with one user.
+ * [preKey] is absent when that user has no one-time prekeys left.
+ */
+@Serializable
+data class PreKeyBundle(
+    @SerialName("identity_key") val identityKey: String,
+    @SerialName("signed_pre_key") val signedPreKey: SignedPreKey,
+    @SerialName("pre_key") val preKey: OneTimePreKeyRequest? = null,
+)
+
+@Serializable
 data class WsUserHit(
     val id: String,
     val username: String,
     @SerialName("display_name") val displayName: String = "",
+    @SerialName("identity_key") val identityKey: String? = null,
+    @SerialName("signed_pre_key") val signedPreKey: SignedPreKey? = null,
 )
 
 @Serializable

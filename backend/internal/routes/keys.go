@@ -11,4 +11,5 @@ func registerKeys(r *gin.Engine, keys *handler.KeysHandler, authenticate gin.Han
 	r.POST("/keys/", authenticate, keys.CreateIdentityKey)
 	r.POST("/keys/signed-prekey", authenticate, keys.UploadSignedPreKey)
 	r.POST("/keys/one-time-prekeys", authenticate, keys.UploadOneTimePreKeys)
+	r.POST("/keys/:user_id/bundle", authenticate, keys.GetPreKeyBundle)
 }

@@ -220,6 +220,20 @@ func openAPI() (*openapi31.Spec, error) {
 			},
 		},
 		{
+			method: http.MethodPost, path: "/keys/{user_id}/bundle", id: "claimPreKeyBundle",
+			summary:     "Claim a prekey bundle",
+			description: "Returns another user's identity public key, current signed prekey, and one one-time prekey so the caller can start a Signal session. The one-time prekey is removed from that user's pool and is omitted when none remain. A session can still start from the identity key and signed prekey. This is not a read: repeating the call claims another one-time prekey.",
+			auth:        true,
+			request:     new(PreKeyBundlePath),
+			responses: []response{
+				{http.StatusOK, new(PreKeyBundle), "Identity key, signed prekey, and at most one one-time prekey."},
+				failure(http.StatusBadRequest, "user_id is missing."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusNotFound, "User does not exist, or has not published an identity key and signed prekey."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
 			method: http.MethodGet, path: "/users/lookup", id: "lookupUser",
 			summary:     "Look up a user by username",
 			description: "Finds a registered user by exact username handle.",
@@ -324,11 +338,13 @@ func openAPI() (*openapi31.Spec, error) {
 				"Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). " +
 				"Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), " +
 				"user.search.results (query, optional request_id, users, optional error). " +
-				"user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users with only id, username, and display_name. " +
+				"user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users. " +
+				"Each user has id, username, and display_name. When that user has published both an identity key and a signed prekey, the hit also includes identity_key and signed_pre_key so the client can message them. Both fields are omitted until both keys exist. " +
+				"A one-time prekey is not included; POST /keys/{user_id}/bundle claims one when the chat is opened. " +
 				"An empty or unusable query returns users []. search_failed is retryable by sending user.search again. " +
 				"Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. " +
 				"Example command: {\"type\":\"user.search\",\"query\":\"ada\",\"request_id\":\"3\"}. " +
-				"Example success: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[{\"id\":\"u2\",\"username\":\"ada\",\"display_name\":\"Ada\"}]}. " +
+				"Example success: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[{\"id\":\"u2\",\"username\":\"ada\",\"display_name\":\"Ada\",\"identity_key\":\"AQID\",\"signed_pre_key\":{\"key_id\":1,\"public_key\":\"AQID\",\"signature\":\"AQID\"}}]}. " +
 				"Example empty: {\"type\":\"user.search.results\",\"query\":\"\",\"request_id\":\"4\",\"users\":[]}. " +
 				"Example failure: {\"type\":\"user.search.results\",\"query\":\"ada\",\"request_id\":\"3\",\"users\":[],\"error\":\"search_failed\"}.",
 			responses: []response{

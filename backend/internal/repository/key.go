@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"messenger/backend/internal/database"
 	"messenger/backend/internal/model"
@@ -15,6 +16,14 @@ type KeyRepository interface {
 	GetIdentityKey(ctx context.Context, userID string) (*model.IdentityKey, error)
 	SaveSignedPreKey(ctx context.Context, key *model.SignedPreKey) error
 	ReplaceOneTimePreKeys(ctx context.Context, userID string, keys []model.OneTimePreKey) error
+	// TakePreKeyBundle reads the identity key and signed prekey and removes one
+	// one-time prekey. The one-time prekey is nil when the user has none left.
+	// Identity or signed is nil when that row is missing, and no one-time prekey
+	// is removed in that case.
+	TakePreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.OneTimePreKey, error)
+	// ListPeerPublicKeys returns identity and signed prekeys for the given users.
+	// It does not remove one-time prekeys. Missing users are absent from the maps.
+	ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, error)
 }
 
 type keyRepository struct {
@@ -70,6 +79,92 @@ func (r *keyRepository) SaveSignedPreKey(ctx context.Context, key *model.SignedP
 		return err
 	}
 	return r.conn(ctx).Create(key).Error
+}
+
+// TakePreKeyBundle loads the keys a peer needs to open a Signal session.
+// The one-time prekey is deleted in the same transaction so two callers cannot
+// receive it. Postgres locks the chosen row; SQLite serializes writers.
+func (r *keyRepository) TakePreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.OneTimePreKey, error) {
+	var identity *model.IdentityKey
+	var signed *model.SignedPreKey
+	var oneTime *model.OneTimePreKey
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		var idKey model.IdentityKey
+		err := tx.Where("user_id = ?", userID).First(&idKey).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		identity = &idKey
+
+		var signedKey model.SignedPreKey
+		err = tx.Where("user_id = ?", userID).First(&signedKey).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		signed = &signedKey
+
+		claimed, err := claimOneTimePreKey(tx, userID)
+		if err != nil {
+			return err
+		}
+		oneTime = claimed
+		return nil
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return identity, signed, oneTime, nil
+}
+
+// ListPeerPublicKeys loads reusable public keys. One-time prekeys stay in the pool.
+func (r *keyRepository) ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, error) {
+	identities := map[string]model.IdentityKey{}
+	signed := map[string]model.SignedPreKey{}
+	if len(userIDs) == 0 {
+		return identities, signed, nil
+	}
+	var identityRows []model.IdentityKey
+	if err := r.conn(ctx).Where("user_id IN ?", userIDs).Find(&identityRows).Error; err != nil {
+		return nil, nil, err
+	}
+	var signedRows []model.SignedPreKey
+	if err := r.conn(ctx).Where("user_id IN ?", userIDs).Find(&signedRows).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, row := range identityRows {
+		identities[row.UserID] = row
+	}
+	for _, row := range signedRows {
+		signed[row.UserID] = row
+	}
+	return identities, signed, nil
+}
+
+// claimOneTimePreKey removes the oldest one-time prekey for the user.
+// Equal upload times break ties by key id.
+func claimOneTimePreKey(tx *gorm.DB, userID string) (*model.OneTimePreKey, error) {
+	query := tx.Where("user_id = ?", userID).Order("created_at ASC").Order("key_id ASC")
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var key model.OneTimePreKey
+	err := query.First(&key).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Delete(&model.OneTimePreKey{}, "id = ?", key.ID).Error; err != nil {
+		return nil, err
+	}
+	return &key, nil
 }
 
 // ReplaceOneTimePreKeys stores keys as the user's current one-time prekey bundle.

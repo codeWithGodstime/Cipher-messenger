@@ -17,7 +17,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 8192
+	maxMessageSize = 65536
 	sendBuffer     = 64
 )
 
@@ -26,16 +26,18 @@ type Client struct {
 	userID   string
 	chat     *service.ChatService
 	profiles *service.ProfileService
+	keys     service.KeyService
 	conn     *websocket.Conn
 	send     chan []byte
 }
 
-func NewClient(hub *Hub, userID string, chat *service.ChatService, profiles *service.ProfileService, conn *websocket.Conn) *Client {
+func NewClient(hub *Hub, userID string, chat *service.ChatService, profiles *service.ProfileService, keys service.KeyService, conn *websocket.Conn) *Client {
 	return &Client{
 		hub:      hub,
 		userID:   userID,
 		chat:     chat,
 		profiles: profiles,
+		keys:     keys,
 		conn:     conn,
 		send:     make(chan []byte, sendBuffer),
 	}
@@ -145,13 +147,38 @@ func (c *Client) searchUsers(env Envelope) {
 		c.sendSearch(query, requestID, searchFailed, nil)
 		return
 	}
+	if c.keys == nil {
+		c.sendSearch(query, requestID, searchFailed, nil)
+		return
+	}
+	ids := make([]string, 0, len(cards))
+	for _, card := range cards {
+		ids = append(ids, card.ID)
+	}
+	identities, signedKeys, err := c.keys.ListPeerPublicKeys(context.Background(), ids)
+	if err != nil {
+		log.Printf("ws user search keys: %v", err)
+		c.sendSearch(query, requestID, searchFailed, nil)
+		return
+	}
 	hits := make([]httpapi.UserSearchHit, 0, len(cards))
 	for _, card := range cards {
-		hits = append(hits, httpapi.UserSearchHit{
+		hit := httpapi.UserSearchHit{
 			ID:          card.ID,
 			Username:    card.Username,
 			DisplayName: card.DisplayName,
-		})
+		}
+		identity, hasIdentity := identities[card.ID]
+		signed, hasSigned := signedKeys[card.ID]
+		if hasIdentity && hasSigned {
+			hit.IdentityKey = identity.PublicKey
+			hit.SignedPreKey = &httpapi.SignedPreKey{
+				KeyID:     signed.KeyID,
+				PublicKey: signed.PublicKey,
+				Signature: signed.Signature,
+			}
+		}
+		hits = append(hits, hit)
 	}
 	c.sendSearch(query, requestID, "", hits)
 }

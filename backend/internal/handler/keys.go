@@ -54,6 +54,19 @@ func (h *KeysHandler) GetIdentityKey(c *gin.Context) {
 	c.JSON(http.StatusOK, httpapi.NewIdentityKey(key))
 }
 
+func (h *KeysHandler) GetPreKeyBundle(c *gin.Context) {
+	if _, ok := middleware.UserID(c); !ok {
+		writeError(c, apperr.Unauthorized())
+		return
+	}
+	identity, signed, oneTime, err := h.keyService.GetPreKeyBundle(c.Request.Context(), c.Param("user_id"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, httpapi.NewPreKeyBundle(identity, signed, oneTime))
+}
+
 func (h *KeysHandler) UploadSignedPreKey(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {

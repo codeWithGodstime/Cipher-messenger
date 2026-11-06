@@ -539,6 +539,54 @@ paths:
       summary: Upload an identity public key
       tags:
       - Messenger
+  /keys/{user_id}/bundle:
+    post:
+      description: 'Returns another user''s identity public key, current signed prekey, and one one-time prekey so the caller can start a Signal session. The one-time prekey is removed from that user''s pool and is omitted when none remain. A session can still start from the identity key and signed prekey. This is not a read: repeating the call claims another one-time prekey.'
+      operationId: claimPreKeyBundle
+      parameters:
+      - description: User id whose keys start a Signal session.
+        in: path
+        name: user_id
+        required: true
+        schema:
+          description: User id whose keys start a Signal session.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreKeyBundle'
+          description: Identity key, signed prekey, and at most one one-time prekey.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: user_id is missing.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: User does not exist, or has not published an identity key and signed prekey.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Claim a prekey bundle
+      tags:
+      - Messenger
   /keys/one-time-prekeys:
     post:
       description: Replaces the signed-in user's one-time prekeys with the uploaded list. prekeys must contain 1 to 100 keys. Each key_id must be unique in the list. Keys left out of the list are removed.
@@ -727,7 +775,7 @@ paths:
       - Messenger
   /ws:
     get:
-      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), user.search.results (query, optional request_id, users, optional error). user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users with only id, username, and display_name. An empty or unusable query returns users []. search_failed is retryable by sending user.search again. Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. Example command: {"type":"user.search","query":"ada","request_id":"3"}. Example success: {"type":"user.search.results","query":"ada","request_id":"3","users":[{"id":"u2","username":"ada","display_name":"Ada"}]}. Example empty: {"type":"user.search.results","query":"","request_id":"4","users":[]}. Example failure: {"type":"user.search.results","query":"ada","request_id":"3","users":[],"error":"search_failed"}.'
+      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), user.search.results (query, optional request_id, users, optional error). user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users. Each user has id, username, and display_name. When that user has published both an identity key and a signed prekey, the hit also includes identity_key and signed_pre_key so the client can message them. Both fields are omitted until both keys exist. A one-time prekey is not included; POST /keys/{user_id}/bundle claims one when the chat is opened. An empty or unusable query returns users []. search_failed is retryable by sending user.search again. Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. Example command: {"type":"user.search","query":"ada","request_id":"3"}. Example success: {"type":"user.search.results","query":"ada","request_id":"3","users":[{"id":"u2","username":"ada","display_name":"Ada","identity_key":"AQID","signed_pre_key":{"key_id":1,"public_key":"AQID","signature":"AQID"}}]}. Example empty: {"type":"user.search.results","query":"","request_id":"4","users":[]}. Example failure: {"type":"user.search.results","query":"ada","request_id":"3","users":[],"error":"search_failed"}.'
       operationId: websocket
       responses:
         "101":
@@ -925,6 +973,20 @@ components:
           description: Peer username handle.
           type: string
       type: object
+    PreKeyBundle:
+      properties:
+        identity_key:
+          description: Base64-encoded libsignal identity public key (33 bytes).
+          type: string
+        pre_key:
+          $ref: '#/components/schemas/OneTimePreKey'
+          description: One-time prekey claimed by this request. Omitted when the user has none left.
+        signed_pre_key:
+          $ref: '#/components/schemas/SignedPreKey'
+      required:
+      - identity_key
+      - signed_pre_key
+      type: object
     Profile:
       properties:
         about:
@@ -1010,6 +1072,22 @@ components:
       - expires_in
       - created
       - profile
+      type: object
+    SignedPreKey:
+      properties:
+        key_id:
+          description: libsignal signed prekey id.
+          type: integer
+        public_key:
+          description: Base64-encoded Curve25519 public key (33 bytes).
+          type: string
+        signature:
+          description: Base64-encoded XEdDSA signature of the public key (64 bytes).
+          type: string
+      required:
+      - key_id
+      - public_key
+      - signature
       type: object
     TokenPair:
       properties:

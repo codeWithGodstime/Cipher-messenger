@@ -23,14 +23,21 @@ type KeyService interface {
 	GetIdentityKey(ctx context.Context, userID string) (*model.IdentityKey, error)
 	UploadSignedPreKey(ctx context.Context, userID string, keyID int, publicKey, signature string) error
 	UploadOneTimePreKeys(ctx context.Context, userID string, prekeys []OneTimePreKeyInput) error
+	// GetPreKeyBundle returns the peer's identity key, signed prekey, and one
+	// one-time prekey. The one-time prekey is removed from the peer's pool.
+	// It is nil when the peer has none left.
+	GetPreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.OneTimePreKey, error)
+	// ListPeerPublicKeys returns identity and signed prekeys without claiming a one-time prekey.
+	ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, error)
 }
 
 type keyService struct {
-	repo repository.KeyRepository
+	repo  repository.KeyRepository
+	users repository.UserRepository
 }
 
-func NewKeyService(repo repository.KeyRepository) KeyService {
-	return &keyService{repo: repo}
+func NewKeyService(repo repository.KeyRepository, users repository.UserRepository) KeyService {
+	return &keyService{repo: repo, users: users}
 }
 
 func (s *keyService) CreateIdentityKey(ctx context.Context, userID string, publicKey string) error {
@@ -59,6 +66,32 @@ func (s *keyService) GetIdentityKey(ctx context.Context, userID string) (*model.
 		return nil, apperr.NotFound("Identity key not found.")
 	}
 	return key, nil
+}
+
+func (s *keyService) GetPreKeyBundle(ctx context.Context, userID string) (*model.IdentityKey, *model.SignedPreKey, *model.OneTimePreKey, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, nil, nil, apperr.Validation("user_id is required.")
+	}
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if user == nil {
+		return nil, nil, nil, apperr.UserDoesNotExist()
+	}
+	identity, signed, oneTime, err := s.repo.TakePreKeyBundle(ctx, userID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if identity == nil || signed == nil {
+		return nil, nil, nil, apperr.NotFound("This user has not published an identity key and signed prekey.")
+	}
+	return identity, signed, oneTime, nil
+}
+
+func (s *keyService) ListPeerPublicKeys(ctx context.Context, userIDs []string) (map[string]model.IdentityKey, map[string]model.SignedPreKey, error) {
+	return s.repo.ListPeerPublicKeys(ctx, userIDs)
 }
 
 func (s *keyService) UploadSignedPreKey(ctx context.Context, userID string, keyID int, publicKey, signature string) error {

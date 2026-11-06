@@ -78,7 +78,7 @@ func main() {
 	profileService := service.NewProfileService(users)
 	profile := handler.NewProfileHandler(profileService)
 	keys := repository.NewKeyRepository(db)
-	keyService := service.NewKeyService(keys)
+	keyService := service.NewKeyService(keys, users)
 	keysHandler := handler.NewKeysHandler(keyService)
 
 	hub := ws.NewHub()
@@ -89,7 +89,7 @@ func main() {
 	contacts := handler.NewContactHandler(
 		service.NewContactService(users, repository.NewContactRepository(db)),
 	)
-	wsHandler := handler.NewWSHandler(hub, chatService, profileService, tokens, sessions)
+	wsHandler := handler.NewWSHandler(hub, chatService, profileService, keyService, tokens, sessions)
 
 	addr := ":" + cfg.Port
 

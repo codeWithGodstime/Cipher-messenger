@@ -3,9 +3,11 @@ package com.example.messenger.data.keys
 import com.example.messenger.data.api.CreateIdentityKeyRequest
 import com.example.messenger.data.api.MessengerApi
 import com.example.messenger.data.api.OneTimePreKeyRequest
+import com.example.messenger.data.api.PreKeyBundle
 import com.example.messenger.data.api.UploadOneTimePreKeysRequest
 import com.example.messenger.data.api.UploadSignedPreKeyRequest
 import com.example.messenger.data.auth.errorMessage
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -14,6 +16,11 @@ import java.io.IOException
 sealed interface KeyCall {
     data object Ok : KeyCall
     data class Failed(val message: String) : KeyCall
+}
+
+sealed interface PreKeyBundleCall {
+    data class Success(val bundle: PreKeyBundle) : PreKeyBundleCall
+    data class Failed(val message: String) : PreKeyBundleCall
 }
 
 class KeyRepository(
@@ -56,6 +63,28 @@ class KeyRepository(
                 authorization = bearer(accessToken),
                 body = UploadOneTimePreKeysRequest(preKeys),
             )
+        }
+    }
+
+    /**
+     * Claims the peer's identity key, signed prekey, and one one-time prekey.
+     * The server removes that one-time prekey, so call this once per new session.
+     */
+    suspend fun claimPreKeyBundle(accessToken: String, userId: String): PreKeyBundleCall {
+        return try {
+            val response = api.claimPreKeyBundle(
+                authorization = bearer(accessToken),
+                userId = userId,
+            )
+            if (!response.isSuccessful) {
+                PreKeyBundleCall.Failed(errorMessage(json, response.code(), response.errorBody()?.string()))
+            } else {
+                PreKeyBundleCall.Success(json.decodeFromString(response.body()?.string().orEmpty()))
+            }
+        } catch (_: IOException) {
+            PreKeyBundleCall.Failed("Can't reach the server. Check the API address and your connection.")
+        } catch (_: SerializationException) {
+            PreKeyBundleCall.Failed("The server returned a response the app could not read.")
         }
     }
 

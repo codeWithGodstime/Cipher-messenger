@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
+import com.example.messenger.data.api.PreKeyBundle
 import com.example.messenger.data.api.WsUserHit
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.SessionStore
@@ -25,6 +26,8 @@ import com.example.messenger.data.chat.normalizeUsernameQuery
 import com.example.messenger.data.chat.toCipherMessage
 import com.example.messenger.data.chat.toThread
 import com.example.messenger.data.chat.toneFor
+import com.example.messenger.data.keys.KeyRepository
+import com.example.messenger.data.keys.PreKeyBundleCall
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +44,7 @@ class ChatViewModel(
     private val tokens: TokenRefresher,
     private val authRepository: AuthRepository,
     private val repository: ChatRepository,
+    private val keys: KeyRepository,
     private val socket: MessengerSocket,
 ) : ViewModel() {
     var threads by mutableStateOf<List<ChatThread>>(emptyList())
@@ -87,6 +91,7 @@ class ChatViewModel(
     private var latestSearchId = ""
     private val loadedConversations = mutableSetOf<String>()
     private val localPins = mutableMapOf<String, Boolean>()
+    private val peerBundles = mutableMapOf<String, PreKeyBundle>()
 
     val peerContacts: List<ContactEntry>
         get() {
@@ -279,8 +284,19 @@ class ChatViewModel(
             notice = "Enter a user id to start a chat."
             return
         }
+        if (usernameResults.any { it.id == peer && !it.encrypted }) {
+            notice = "This user hasn't published encryption keys yet."
+            return
+        }
         threads.firstOrNull { it.peerId == peer }?.let { existing ->
-            onOpened(existing.id)
+            viewModelScope.launch {
+                val token = requireAccessToken() ?: run {
+                    notice = "Sign in again to start a chat."
+                    return@launch
+                }
+                if (!claimPeerKeys(token, peer)) return@launch
+                onOpened(existing.id)
+            }
             return
         }
         openConversation(peerUserId = peer, username = null, onOpened = onOpened)
@@ -362,6 +378,11 @@ class ChatViewModel(
             connectBusy = true
             when (val result = repository.openConversation(token, peerUserId = peerUserId, username = username)) {
                 is ChatCall.Ok -> {
+                    val peerId = result.value.peer.id
+                    if (!claimPeerKeys(token, peerId)) {
+                        connectBusy = false
+                        return@launch
+                    }
                     upsertConversation(result.value)
                     connectBusy = false
                     onOpened(result.value.id)
@@ -451,16 +472,31 @@ class ChatViewModel(
         usernameResults = frame.users.map { it.asPerson() }
     }
 
+    private suspend fun claimPeerKeys(token: String, peerId: String): Boolean {
+        if (peerId.isBlank() || peerBundles.containsKey(peerId)) return true
+        return when (val result = keys.claimPreKeyBundle(token, peerId)) {
+            is PreKeyBundleCall.Success -> {
+                peerBundles[peerId] = result.bundle
+                true
+            }
+            is PreKeyBundleCall.Failed -> {
+                notice = result.message
+                false
+            }
+        }
+    }
+
     private fun WsUserHit.asPerson(): ContactEntry {
         val name = displayName.ifBlank { username }.ifBlank { "User" }
+        val ready = !identityKey.isNullOrBlank() && signedPreKey != null
         return ContactEntry(
             id = id,
             name = name,
             initials = initialsFor(name),
             tone = toneFor(id),
-            detail = "@$username",
+            detail = if (ready) "@$username" else "@$username · keys not ready",
             online = false,
-            encrypted = true,
+            encrypted = ready,
         )
     }
 
@@ -497,6 +533,7 @@ class ChatViewModelFactory(
                 tokens = bound.tokenRefresher,
                 authRepository = ApiClient.repository,
                 repository = bound.chatRepository,
+                keys = bound.keyRepository,
                 socket = ApiClient.messengerSocket(sessionStore),
             ) as T
         }

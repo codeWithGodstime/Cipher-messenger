@@ -103,4 +103,10 @@ interface MessengerApi {
         @Header("Authorization") authorization: String,
         @Body body: UploadOneTimePreKeysRequest,
     ): Response<ResponseBody>
+
+    @POST("keys/{userId}/bundle")
+    suspend fun claimPreKeyBundle(
+        @Header("Authorization") authorization: String,
+        @Path("userId") userId: String,
+    ): Response<ResponseBody>
 }

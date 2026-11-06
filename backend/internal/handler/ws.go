@@ -28,6 +28,7 @@ type WSHandler struct {
 	hub      *ws.Hub
 	chat     *service.ChatService
 	profiles *service.ProfileService
+	keys     service.KeyService
 	tokens   *token.Manager
 	sessions repository.SessionRepository
 }
@@ -36,10 +37,11 @@ func NewWSHandler(
 	hub *ws.Hub,
 	chat *service.ChatService,
 	profiles *service.ProfileService,
+	keys service.KeyService,
 	tokens *token.Manager,
 	sessions repository.SessionRepository,
 ) *WSHandler {
-	return &WSHandler{hub: hub, chat: chat, profiles: profiles, tokens: tokens, sessions: sessions}
+	return &WSHandler{hub: hub, chat: chat, profiles: profiles, keys: keys, tokens: tokens, sessions: sessions}
 }
 
 func (h *WSHandler) Connect(c *gin.Context) {
@@ -75,7 +77,7 @@ func (h *WSHandler) Connect(c *gin.Context) {
 		)
 		return
 	}
-	client := ws.NewClient(h.hub, userID, h.chat, h.profiles, conn)
+	client := ws.NewClient(h.hub, userID, h.chat, h.profiles, h.keys, conn)
 	client.Run()
 }
 

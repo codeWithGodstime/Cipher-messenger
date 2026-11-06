@@ -156,11 +156,13 @@ type WSInfo struct {
 }
 
 // UserSearchHit is one row of a user.search.results frame.
-// Only the fields needed to open a chat are included.
+// IdentityKey and SignedPreKey are set together when the user can be messaged.
 type UserSearchHit struct {
-	ID          string `json:"id" required:"true"`
-	Username    string `json:"username" required:"true" description:"Username handle."`
-	DisplayName string `json:"display_name" required:"true" description:"May be empty when the user has not set one."`
+	ID           string        `json:"id" required:"true"`
+	Username     string        `json:"username" required:"true" description:"Username handle."`
+	DisplayName  string        `json:"display_name" required:"true" description:"May be empty when the user has not set one."`
+	IdentityKey  string        `json:"identity_key,omitempty" description:"Base64 identity public key. Present with signed_pre_key when this user can be messaged."`
+	SignedPreKey *SignedPreKey `json:"signed_pre_key,omitempty" description:"Current signed prekey. Omitted, with identity_key, until both are published."`
 }
 
 type CreateIdentityKeyRequest struct {
@@ -246,6 +248,26 @@ type IdentityKey struct {
 	CreatedAt time.Time `json:"created_at" required:"true"`
 }
 
+// PreKeyBundlePath is the path for POST /keys/{user_id}/bundle.
+type PreKeyBundlePath struct {
+	UserID string `path:"user_id" required:"true" description:"User id whose keys start a Signal session."`
+}
+
+// SignedPreKey is a libsignal signed prekey public key and its identity signature.
+type SignedPreKey struct {
+	KeyID     int    `json:"key_id" required:"true" description:"libsignal signed prekey id."`
+	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded Curve25519 public key (33 bytes)."`
+	Signature string `json:"signature" required:"true" description:"Base64-encoded XEdDSA signature of the public key (64 bytes)."`
+}
+
+// PreKeyBundle is the public key material for an X3DH session with one user.
+// PreKey is omitted when that user has no one-time prekeys left.
+type PreKeyBundle struct {
+	IdentityKey  string         `json:"identity_key" required:"true" description:"Base64-encoded libsignal identity public key (33 bytes)."`
+	SignedPreKey SignedPreKey   `json:"signed_pre_key" required:"true"`
+	PreKey       *OneTimePreKey `json:"pre_key,omitempty" description:"One-time prekey claimed by this request. Omitted when the user has none left."`
+}
+
 // Error is the JSON body of a failed request.
 type Error struct {
 	Code       string `json:"error" required:"true" description:"Stable machine-readable code."`
@@ -323,6 +345,24 @@ func NewIdentityKey(key *model.IdentityKey) IdentityKey {
 		PublicKey: key.PublicKey,
 		CreatedAt: key.CreatedAt,
 	}
+}
+
+func NewPreKeyBundle(identity *model.IdentityKey, signed *model.SignedPreKey, oneTime *model.OneTimePreKey) PreKeyBundle {
+	bundle := PreKeyBundle{
+		IdentityKey: identity.PublicKey,
+		SignedPreKey: SignedPreKey{
+			KeyID:     signed.KeyID,
+			PublicKey: signed.PublicKey,
+			Signature: signed.Signature,
+		},
+	}
+	if oneTime != nil {
+		bundle.PreKey = &OneTimePreKey{
+			KeyID:     oneTime.KeyID,
+			PublicKey: oneTime.PublicKey,
+		}
+	}
+	return bundle
 }
 
 func NewContact(id string, peer Profile, createdAt time.Time) Contact {

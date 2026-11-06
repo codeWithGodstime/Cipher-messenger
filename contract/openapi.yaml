@@ -1,7 +1,6 @@
 openapi: 3.1.0
 info:
-  description: HTTP API for the Messenger app. Protected routes require an access
-    token.
+  description: HTTP API for the Messenger app. Protected routes require an access token.
   title: Messenger API
   version: 1.0.0
 paths:
@@ -69,8 +68,7 @@ paths:
       - Messenger
   /auth/refresh:
     post:
-      description: Rotates the refresh token and returns a new access token for the
-        same session.
+      description: Rotates the refresh token and returns a new access token for the same session.
       operationId: refreshSession
       requestBody:
         content:
@@ -173,8 +171,7 @@ paths:
       tags:
       - Messenger
     post:
-      description: Saves a registered peer by user_id or username. Idempotent for
-        the same peer.
+      description: Saves a registered peer by user_id or username. Idempotent for the same peer.
       operationId: addContact
       requestBody:
         content:
@@ -285,8 +282,7 @@ paths:
       tags:
       - Messenger
     post:
-      description: Opens an existing 1:1 conversation with the peer, or creates one.
-        Provide user_id or username.
+      description: Opens an existing 1:1 conversation with the peer, or creates one. Provide user_id or username.
       operationId: openConversation
       requestBody:
         content:
@@ -332,8 +328,7 @@ paths:
       - Messenger
   /conversations/{id}/messages:
     get:
-      description: Returns messages newest first. Optional before (RFC3339) and limit
-        (1-100, default 50).
+      description: Returns messages newest first. Optional before (RFC3339) and limit (1-100, default 50).
       operationId: listMessages
       parameters:
       - description: Return messages created before this RFC3339 timestamp.
@@ -398,8 +393,7 @@ paths:
       tags:
       - Messenger
     post:
-      description: Persists a message and fans it out to conversation members over
-        WebSocket.
+      description: Persists a message and fans it out to conversation members over WebSocket.
       operationId: sendMessage
       parameters:
       - description: Conversation id.
@@ -511,8 +505,7 @@ paths:
       tags:
       - Messenger
     post:
-      description: Stores the signed-in user's libsignal identity public key. Uploading
-        again replaces the stored key.
+      description: Stores the signed-in user's libsignal identity public key. Uploading again replaces the stored key.
       operationId: createIdentityKey
       requestBody:
         content:
@@ -544,6 +537,78 @@ paths:
       security:
       - bearerAuth: []
       summary: Upload an identity public key
+      tags:
+      - Messenger
+  /keys/one-time-prekeys:
+    post:
+      description: Replaces the signed-in user's one-time prekeys with the uploaded list. prekeys must contain 1 to 100 keys. Each key_id must be unique in the list. Keys left out of the list are removed.
+      operationId: uploadOneTimePreKeys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadOneTimePreKeysRequest'
+        required: true
+      responses:
+        "204":
+          description: The one-time prekeys were stored.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body is invalid, or prekeys is empty, larger than 100, or contains a duplicate or invalid key.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Upload one-time prekeys
+      tags:
+      - Messenger
+  /keys/signed-prekey:
+    post:
+      description: Stores the signed-in user's current libsignal signed prekey. Uploading again replaces the stored signed prekey. The signature is stored for recipients to verify with the identity key.
+      operationId: uploadSignedPreKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSignedPreKeyRequest'
+        required: true
+      responses:
+        "204":
+          description: The signed prekey was stored.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body, key_id, public_key, or signature is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Upload a signed prekey
       tags:
       - Messenger
   /me:
@@ -662,21 +727,7 @@ paths:
       - Messenger
   /ws:
     get:
-      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token
-        query; frames do not carry a token. Client commands: ping, message.send (conversation_id,
-        body), user.search (query, optional request_id). Server events: pong, message.created
-        (message), error (error code invalid_json, validation_error, send_failed,
-        or unknown_type), user.search.results (query, optional request_id, users,
-        optional error). user.search matches username case-insensitively as a substring,
-        ranks prefix matches first, excludes the signed-in user, and returns at most
-        20 users with only id, username, and display_name. An empty or unusable query
-        returns users []. search_failed is retryable by sending user.search again.
-        Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a
-        stale response. No paging cursor: a short fragment may omit later matches.
-        Keepalive: ping/pong. Example command: {"type":"user.search","query":"ada","request_id":"3"}.
-        Example success: {"type":"user.search.results","query":"ada","request_id":"3","users":[{"id":"u2","username":"ada","display_name":"Ada"}]}.
-        Example empty: {"type":"user.search.results","query":"","request_id":"4","users":[]}.
-        Example failure: {"type":"user.search.results","query":"ada","request_id":"3","users":[],"error":"search_failed"}.'
+      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), user.search.results (query, optional request_id, users, optional error). user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users with only id, username, and display_name. An empty or unusable query returns users []. search_failed is retryable by sending user.search again. Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. Example command: {"type":"user.search","query":"ada","request_id":"3"}. Example success: {"type":"user.search.results","query":"ada","request_id":"3","users":[{"id":"u2","username":"ada","display_name":"Ada"}]}. Example empty: {"type":"user.search.results","query":"","request_id":"4","users":[]}. Example failure: {"type":"user.search.results","query":"ada","request_id":"3","users":[],"error":"search_failed"}.'
       operationId: websocket
       responses:
         "101":
@@ -853,6 +904,18 @@ components:
       required:
       - messages
       type: object
+    OneTimePreKey:
+      properties:
+        key_id:
+          description: libsignal one-time prekey id, from 0 through 16777215.
+          type: integer
+        public_key:
+          description: Base64-encoded libsignal Curve25519 public key (33 bytes).
+          type: string
+      required:
+      - key_id
+      - public_key
+      type: object
     OpenConversation:
       properties:
         user_id:
@@ -966,11 +1029,38 @@ components:
       - token_type
       - expires_in
       type: object
+    UploadOneTimePreKeysRequest:
+      properties:
+        prekeys:
+          description: 1 to 100 one-time prekeys. Replaces one-time prekeys already stored for this account.
+          items:
+            $ref: '#/components/schemas/OneTimePreKey'
+          maxItems: 100
+          minItems: 1
+          type: array
+      required:
+      - prekeys
+      type: object
+    UploadSignedPreKeyRequest:
+      properties:
+        key_id:
+          description: libsignal signed prekey id, from 0 through 16777215.
+          type: integer
+        public_key:
+          description: Base64-encoded libsignal Curve25519 public key (33 bytes).
+          type: string
+        signature:
+          description: Base64-encoded XEdDSA signature of the public key (64 bytes).
+          type: string
+      required:
+      - key_id
+      - public_key
+      - signature
+      type: object
     WSInfo:
       properties:
         protocol:
-          description: JSON frames. Auth via Authorization Bearer or access_token
-            query. Frames do not carry a token.
+          description: JSON frames. Auth via Authorization Bearer or access_token query. Frames do not carry a token.
           type: string
       required:
       - protocol

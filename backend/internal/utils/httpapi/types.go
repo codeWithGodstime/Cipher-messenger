@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"messenger/backend/internal/model"
@@ -163,6 +165,79 @@ type UserSearchHit struct {
 
 type CreateIdentityKeyRequest struct {
 	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded libsignal identity public key (33 bytes)."`
+}
+
+// UploadSignedPreKeyRequest is the body of POST /keys/signed-prekey.
+type UploadSignedPreKeyRequest struct {
+	KeyID     int    `json:"key_id" required:"true" description:"libsignal signed prekey id, from 0 through 16777215."`
+	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded libsignal Curve25519 public key (33 bytes)."`
+	Signature string `json:"signature" required:"true" description:"Base64-encoded XEdDSA signature of the public key (64 bytes)."`
+}
+
+// UnmarshalJSON requires key_id so an omitted id is not stored as 0.
+func (r *UploadSignedPreKeyRequest) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		KeyID     *int   `json:"key_id"`
+		PublicKey string `json:"public_key"`
+		Signature string `json:"signature"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.KeyID == nil {
+		return fmt.Errorf("key_id is required")
+	}
+	r.KeyID = *raw.KeyID
+	r.PublicKey = raw.PublicKey
+	r.Signature = raw.Signature
+	return nil
+}
+
+// OneTimePreKey is one entry of POST /keys/one-time-prekeys.
+type OneTimePreKey struct {
+	KeyID     int    `json:"key_id" required:"true" description:"libsignal one-time prekey id, from 0 through 16777215."`
+	PublicKey string `json:"public_key" required:"true" description:"Base64-encoded libsignal Curve25519 public key (33 bytes)."`
+}
+
+// UnmarshalJSON requires key_id so an omitted id is not stored as 0.
+func (k *OneTimePreKey) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		KeyID     *int   `json:"key_id"`
+		PublicKey string `json:"public_key"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.KeyID == nil {
+		return fmt.Errorf("key_id is required")
+	}
+	k.KeyID = *raw.KeyID
+	k.PublicKey = raw.PublicKey
+	return nil
+}
+
+// UploadOneTimePreKeysRequest is the body of POST /keys/one-time-prekeys.
+// The list replaces one-time prekeys already stored for the account.
+type UploadOneTimePreKeysRequest struct {
+	PreKeys []OneTimePreKey `json:"prekeys" required:"true" nullable:"false" minItems:"1" maxItems:"100" description:"1 to 100 one-time prekeys. Replaces one-time prekeys already stored for this account."`
+}
+
+// UnmarshalJSON requires prekeys so null is not treated as an empty bundle.
+func (r *UploadOneTimePreKeysRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	body, ok := raw["prekeys"]
+	if !ok || string(body) == "null" {
+		return fmt.Errorf("prekeys is required")
+	}
+	var items []OneTimePreKey
+	if err := json.Unmarshal(body, &items); err != nil {
+		return err
+	}
+	r.PreKeys = items
+	return nil
 }
 
 // IdentityKey is the signed-in user's stored identity public key.

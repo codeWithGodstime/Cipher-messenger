@@ -9,4 +9,6 @@ import (
 func registerKeys(r *gin.Engine, keys *handler.KeysHandler, authenticate gin.HandlerFunc) {
 	r.GET("/keys/", authenticate, keys.GetIdentityKey)
 	r.POST("/keys/", authenticate, keys.CreateIdentityKey)
+	r.POST("/keys/signed-prekey", authenticate, keys.UploadSignedPreKey)
+	r.POST("/keys/one-time-prekeys", authenticate, keys.UploadOneTimePreKeys)
 }

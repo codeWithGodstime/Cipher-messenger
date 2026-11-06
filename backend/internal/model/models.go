@@ -75,3 +75,31 @@ type IdentityKey struct {
 }
 
 func (IdentityKey) TableName() string { return "identity_keys" }
+
+// MaxOneTimePreKeys is the largest one-time prekey bundle a client can store.
+const MaxOneTimePreKeys = 100
+
+// SignedPreKey is the account's current libsignal signed prekey.
+// One row per user; a later upload replaces it.
+type SignedPreKey struct {
+	ID        string    `gorm:"primaryKey;size:36"`
+	UserID    string    `gorm:"size:36;not null;uniqueIndex"`
+	KeyID     int       `gorm:"not null"`
+	PublicKey string    `gorm:"size:256;not null"`
+	Signature string    `gorm:"size:256;not null"`
+	CreatedAt time.Time `gorm:"not null"`
+}
+
+func (SignedPreKey) TableName() string { return "signed_prekeys" }
+
+// OneTimePreKey is one libsignal one-time prekey. A user stores at most
+// MaxOneTimePreKeys rows, replaced as a set on each upload.
+type OneTimePreKey struct {
+	ID        string    `gorm:"primaryKey;size:36"`
+	UserID    string    `gorm:"size:36;not null;uniqueIndex:idx_one_time_prekeys_user_key,priority:1;index"`
+	KeyID     int       `gorm:"not null;uniqueIndex:idx_one_time_prekeys_user_key,priority:2"`
+	PublicKey string    `gorm:"size:256;not null"`
+	CreatedAt time.Time `gorm:"not null"`
+}
+
+func (OneTimePreKey) TableName() string { return "one_time_prekeys" }

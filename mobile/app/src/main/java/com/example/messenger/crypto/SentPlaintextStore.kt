@@ -7,9 +7,9 @@ import androidx.security.crypto.MasterKey
 import java.security.MessageDigest
 
 /**
- * Plaintext of messages this device sent.
- * Signal ciphertext is decryptable by the recipient, so the sender keeps a copy
- * keyed by the ciphertext that was uploaded.
+ * Plaintext this device has already produced.
+ * Signal ciphertext can be decrypted only once, so both sent messages and
+ * messages this device has opened are kept, keyed by that ciphertext.
  */
 class SentPlaintextStore(context: Context, username: String) {
     private val account = username.trim().lowercase()

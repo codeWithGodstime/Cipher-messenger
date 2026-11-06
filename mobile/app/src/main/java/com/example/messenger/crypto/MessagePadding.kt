@@ -30,17 +30,26 @@ fun unpadPlaintext(message: ByteArray): ByteArray {
 }
 
 /**
- * Libsignal ciphertext starts with a version nibble and a type nibble.
- * Returns the type when this looks like a Whisper or PreKey message.
+ * Lowest and highest session version this client accepts.
+ * Version 3 is the pre-Kyber format. Version 4 is the current one.
+ */
+const val SIGNAL_MIN_MESSAGE_VERSION = 3
+const val SIGNAL_MAX_MESSAGE_VERSION = 4
+
+/**
+ * Libsignal puts a version byte first. The high nibble is the session version.
+ * The low nibble is the ciphertext format version, currently 4.
+ * That byte does not say whether the message is a PreKey or a Whisper message.
+ *
+ * Returns the format version when [bytes] looks like Signal ciphertext.
+ * A null result means the bytes should be shown as ordinary text.
  */
 fun signalCiphertextType(bytes: ByteArray): Int? {
     if (bytes.isEmpty()) return null
     val header = bytes[0].toInt() and 0xFF
-    val version = header ushr 4
-    val type = header and 0x0F
-    if (version < 3) return null
-    return when (type) {
-        SIGNAL_WHISPER_TYPE, SIGNAL_PREKEY_TYPE -> type
-        else -> null
-    }
+    val messageVersion = header ushr 4
+    val formatVersion = header and 0x0F
+    if (messageVersion !in SIGNAL_MIN_MESSAGE_VERSION..SIGNAL_MAX_MESSAGE_VERSION) return null
+    if (formatVersion !in SIGNAL_MIN_MESSAGE_VERSION..SIGNAL_MAX_MESSAGE_VERSION) return null
+    return formatVersion
 }

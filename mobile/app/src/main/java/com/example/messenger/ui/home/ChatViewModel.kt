@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.example.messenger.crypto.AccountDeviceData
 import com.example.messenger.crypto.DeviceProtocolStore
@@ -14,6 +15,7 @@ import com.example.messenger.crypto.IdentityStore
 import com.example.messenger.crypto.LocalPreKeyStore
 import com.example.messenger.crypto.MessageCipher
 import com.example.messenger.crypto.SentPlaintextStore
+import com.example.messenger.crypto.signalCiphertextType
 import com.example.messenger.data.api.ApiClient
 import com.example.messenger.data.api.ApiConversation
 import com.example.messenger.data.api.ApiMessage
@@ -107,6 +109,7 @@ class ChatViewModel(
     private val loadedConversations = mutableSetOf<String>()
     private val localPins = mutableMapOf<String, Boolean>()
     private val preKeyRefresh = Mutex()
+    private val historyGate = Mutex()
 
     val peerContacts: List<ContactEntry>
         get() {
@@ -222,7 +225,7 @@ class ChatViewModel(
                 is ChatCall.Ok -> {
                     val mapped = buildList {
                         for (conversation in result.value) {
-                            add(conversation.toThread(userId).withPlainSnippet(conversation))
+                            add(conversation.toPlainThread(token))
                         }
                     }
                     threads = mergePins(mapped)
@@ -241,10 +244,15 @@ class ChatViewModel(
         threads = threads.map { thread ->
             if (thread.id == conversationId) thread.copy(unread = 0) else thread
         }
-        if (conversationId in loadedConversations && messages.containsKey(conversationId)) {
-            return
+        viewModelScope.launch {
+            val token = requireAccessToken() ?: return@launch
+            val peerId = threads.firstOrNull { it.id == conversationId }?.peerId.orEmpty()
+            val plain = loadPlainMessages(token, conversationId, peerId) ?: return@launch
+            val snippet = plain.lastOrNull()?.body ?: return@launch
+            threads = threads.map { thread ->
+                if (thread.id == conversationId) thread.copy(snippet = readableSnippet(snippet)) else thread
+            }
         }
-        loadMessages(conversationId)
     }
 
     fun leaveConversation() {
@@ -442,38 +450,93 @@ class ChatViewModel(
         }
     }
 
-    private fun loadMessages(conversationId: String) {
-        viewModelScope.launch {
-            val token = requireAccessToken() ?: return@launch
-            when (val result = repository.listMessages(token, conversationId)) {
-                is ChatCall.Ok -> {
-                    // API returns newest first; UI wants oldest → newest.
-                    val peerId = threads.firstOrNull { it.id == conversationId }?.peerId.orEmpty()
-                    val ordered = buildList {
-                        for (message in result.value.asReversed()) {
-                            add(message.toCipherMessage(userId).copy(body = plainBody(message, peerId)))
-                        }
-                    }
-                    messages = messages + (conversationId to ordered)
-                    loadedConversations += conversationId
-                }
-                is ChatCall.Failed -> notice = result.message
+    /**
+     * Decrypts a conversation from oldest to newest and keeps the plaintext.
+     * A later open reuses that copy. Signal ciphertext cannot be decrypted twice.
+     */
+    private suspend fun loadPlainMessages(
+        token: String,
+        conversationId: String,
+        peerId: String,
+    ): List<CipherMessage>? = historyGate.withLock {
+        if (userId.isBlank()) ensureUserId()
+        if (userId.isBlank()) return@withLock null
+        if (conversationId in loadedConversations) {
+            return@withLock messages[conversationId].orEmpty()
+        }
+        when (val result = listAllMessages(token, conversationId)) {
+            is ChatCall.Failed -> {
+                notice = result.message
+                null
+            }
+            is ChatCall.Ok -> {
+                val history = plainMessages(result.value, peerId)
+                val merged = mergeHistory(messages[conversationId].orEmpty(), history)
+                messages = messages + (conversationId to merged)
+                loadedConversations += conversationId
+                merged
             }
         }
     }
 
+    private suspend fun listAllMessages(
+        token: String,
+        conversationId: String,
+    ): ChatCall<List<ApiMessage>> {
+        val newestFirst = ArrayList<ApiMessage>()
+        var before: String? = null
+        repeat(MAX_HISTORY_PAGES) {
+            when (val page = repository.listMessages(token, conversationId, before, HISTORY_PAGE)) {
+                is ChatCall.Failed -> return page
+                is ChatCall.Ok -> {
+                    if (page.value.isEmpty()) return ChatCall.Ok(newestFirst.distinctBy { it.id })
+                    newestFirst += page.value
+                    if (page.value.size < HISTORY_PAGE) return ChatCall.Ok(newestFirst.distinctBy { it.id })
+                    val oldest = page.value.last().createdAt
+                    if (oldest == before) return ChatCall.Ok(newestFirst.distinctBy { it.id })
+                    before = oldest
+                }
+            }
+        }
+        return ChatCall.Ok(newestFirst.distinctBy { it.id })
+    }
+
+    private suspend fun plainMessages(apiMessages: List<ApiMessage>, peerId: String): List<CipherMessage> {
+        val ordered = ArrayList<CipherMessage>(apiMessages.size)
+        for (message in apiMessages.asReversed()) {
+            ordered += message.toCipherMessage(userId).copy(body = plainBody(message, peerId))
+        }
+        return ordered
+    }
+
+    private fun mergeHistory(live: List<CipherMessage>, history: List<CipherMessage>): List<CipherMessage> {
+        val seen = history.map { it.id }.toSet()
+        return history + live.filter { it.id !in seen }
+    }
+
     private suspend fun onIncomingMessage(message: ApiMessage) {
+        val token = requireAccessToken() ?: return
         val peerId = threads.firstOrNull { it.id == message.conversationId }?.peerId
             ?: message.senderId.takeIf { it != userId }.orEmpty()
-        val plain = plainBody(message, peerId)
-        val cipher = message.toCipherMessage(userId).copy(body = plain)
-        val existing = messages[message.conversationId].orEmpty()
-        if (existing.any { it.id == cipher.id }) {
-            updateThreadFromMessage(message, plain, bumpUnread = false)
+        val hadIt = messages[message.conversationId].orEmpty().any { it.id == message.id }
+        if (message.conversationId !in loadedConversations) {
+            loadPlainMessages(token, message.conversationId, peerId)
+        }
+        val current = messages[message.conversationId].orEmpty()
+        val existing = current.firstOrNull { it.id == message.id }
+        if (existing != null) {
+            val viewing = activeConversationId == message.conversationId
+            updateThreadFromMessage(
+                message,
+                existing.body,
+                bumpUnread = !hadIt && !viewing && message.senderId != userId,
+            )
+            if (threads.none { it.id == message.conversationId }) refreshConversations()
             return
         }
-        messages = messages + (message.conversationId to (existing + cipher))
-        loadedConversations += message.conversationId
+        val plain = plainBody(message, peerId)
+        val cipher = message.toCipherMessage(userId).copy(body = plain)
+        messages = messages + (message.conversationId to (current + cipher))
         val viewing = activeConversationId == message.conversationId
         updateThreadFromMessage(message, plain, bumpUnread = !viewing && !cipher.outgoing)
         if (threads.none { it.id == message.conversationId }) {
@@ -483,13 +546,19 @@ class ChatViewModel(
 
     private fun updateThreadFromMessage(message: ApiMessage, plain: String, bumpUnread: Boolean) {
         val time = formatChatTime(message.createdAt)
+        val viewing = activeConversationId == message.conversationId
         threads = threads.map { thread ->
             if (thread.id != message.conversationId) return@map thread
+            val unread = when {
+                viewing -> 0
+                bumpUnread -> thread.unread + 1
+                else -> thread.unread
+            }
             thread.copy(
-                snippet = plain,
+                snippet = readableSnippet(plain),
                 timeLabel = time,
                 voice = false,
-                unread = if (bumpUnread) thread.unread + 1 else 0,
+                unread = unread,
                 receipt = if (message.senderId == userId) Receipt.Sent else thread.receipt,
                 inRecent = true,
             )
@@ -533,15 +602,19 @@ class ChatViewModel(
         return crypto.reveal(userId, peer, message.body, outgoing)
     }
 
-    private suspend fun ChatThread.withPlainSnippet(conversation: ApiConversation): ChatThread {
-        val last = conversation.lastMessage ?: return this
-        val plain = crypto.reveal(
-            localUserId = userId,
-            peerUserId = conversation.peer.id,
-            body = last.body,
-            outgoing = last.senderId == userId,
-        )
-        return copy(snippet = plain.ifBlank { snippet })
+    private suspend fun ApiConversation.toPlainThread(token: String): ChatThread {
+        val thread = toThread(userId)
+        val plain = lastMessage?.let { loadPlainMessages(token, id, peer.id) }
+        val snippet = plain?.lastOrNull()?.body ?: thread.snippet
+        val unread = if (activeConversationId == id) 0 else thread.unread
+        return thread.copy(snippet = readableSnippet(snippet), unread = unread)
+    }
+
+    private fun readableSnippet(body: String): String {
+        if (body.isBlank()) return "End-to-end encrypted"
+        val decoded = runCatching { Base64.decode(body, Base64.NO_WRAP) }.getOrNull()
+        if (decoded != null && signalCiphertextType(decoded) != null) return "Encrypted message"
+        return body
     }
 
     private fun publishKyberPreKey() {
@@ -592,6 +665,8 @@ class ChatViewModel(
 
     private companion object {
         const val TAG = "Chat"
+        const val HISTORY_PAGE = 100
+        const val MAX_HISTORY_PAGES = 20
     }
 }
 

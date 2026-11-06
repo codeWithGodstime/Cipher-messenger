@@ -71,16 +71,16 @@ class ChatCrypto(
         outgoing: Boolean,
     ): String = gate.withLock {
         withContext(Dispatchers.IO) {
-            if (outgoing) {
-                sent.find(body)?.let { return@withContext it }
-            }
+            sent.find(body)?.let { return@withContext it }
             val bytes = runCatching { Base64.decode(body, Base64.NO_WRAP) }.getOrNull()
             if (bytes == null || signalCiphertextType(bytes) == null) return@withContext body
             if (outgoing || peerUserId.isBlank() || localUserId.isBlank()) {
                 return@withContext ENCRYPTED_PLACEHOLDER
             }
             try {
-                cipher.decrypt(localUserId, peerUserId, body)
+                val plain = cipher.decrypt(localUserId, peerUserId, body)
+                sent.remember(body, plain)
+                plain
             } catch (error: Exception) {
                 Log.w(TAG, "decrypt failed", error)
                 UNREADABLE_PLACEHOLDER

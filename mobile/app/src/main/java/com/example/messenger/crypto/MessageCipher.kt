@@ -64,12 +64,22 @@ class MessageCipher(
 
     fun decrypt(localUserId: String, peerUserId: String, ciphertext: String): String {
         val bytes = Base64.decode(ciphertext, Base64.NO_WRAP)
+        if (signalCiphertextType(bytes) == null) error("Not a Signal ciphertext")
         val cipher = SessionCipher(store, signalAddress(localUserId), signalAddress(peerUserId))
-        val padded = when (signalCiphertextType(bytes)) {
-            SIGNAL_PREKEY_TYPE -> cipher.decrypt(PreKeySignalMessage(bytes))
-            SIGNAL_WHISPER_TYPE -> cipher.decrypt(SignalMessage(bytes))
-            else -> error("Not a Signal ciphertext")
-        }
+        val padded = openCiphertext(cipher, bytes)
         return unpadPlaintext(padded).toString(Charsets.UTF_8)
+    }
+
+    /**
+     * The stored body has no separate type field. A PreKey message carries the
+     * first session; later messages are Whisper messages. Parsing as the wrong
+     * kind fails before the session changes.
+     */
+    private fun openCiphertext(cipher: SessionCipher, bytes: ByteArray): ByteArray {
+        val preKey = runCatching { PreKeySignalMessage(bytes) }.getOrNull()
+        if (preKey != null) {
+            return cipher.decrypt(preKey)
+        }
+        return cipher.decrypt(SignalMessage(bytes))
     }
 }

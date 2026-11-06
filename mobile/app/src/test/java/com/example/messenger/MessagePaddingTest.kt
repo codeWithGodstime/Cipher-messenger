@@ -1,7 +1,5 @@
 package com.example.messenger
 
-import com.example.messenger.crypto.SIGNAL_PREKEY_TYPE
-import com.example.messenger.crypto.SIGNAL_WHISPER_TYPE
 import com.example.messenger.crypto.padPlaintext
 import com.example.messenger.crypto.signalCiphertextType
 import com.example.messenger.crypto.unpadPlaintext
@@ -29,9 +27,12 @@ class MessagePaddingTest {
     }
 
     @Test
-    fun readsTheSignalMessageType() {
-        assertEquals(SIGNAL_WHISPER_TYPE, signalCiphertextType(byteArrayOf(0x32)))
-        assertEquals(SIGNAL_PREKEY_TYPE, signalCiphertextType(byteArrayOf(0x33)))
+    fun recognizesASignalCiphertextVersionByte() {
+        // High nibble is the session version. Low nibble is the format version.
+        assertEquals(4, signalCiphertextType(byteArrayOf(0x44)))
+        assertEquals(4, signalCiphertextType(byteArrayOf(0x34)))
+        assertEquals(3, signalCiphertextType(byteArrayOf(0x33)))
+        assertNull(signalCiphertextType(byteArrayOf(0x32)))
         assertNull(signalCiphertextType(byteArrayOf(0x22)))
         assertNull(signalCiphertextType(byteArrayOf()))
     }

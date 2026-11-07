@@ -29,6 +29,8 @@ type Config struct {
 	// RedisURL is REDIS_URL. It is required only when OTP_REQUIRED is true.
 	// When OTP is disabled the process boots without Redis.
 	RedisURL string
+	// MediaDir is where ciphertext attachment blobs are stored. MEDIA_DIR overrides it.
+	MediaDir string
 }
 
 func Load() (Config, error) {
@@ -80,9 +82,13 @@ func Load() (Config, error) {
 		OTPRateMax:     rateMax,
 		OTPRequired:    otpRequired,
 		RedisURL:       redisURL,
+		MediaDir:       strings.TrimSpace(env("MEDIA_DIR", "data/media")),
 	}
 	if cfg.Port == "" {
 		return Config{}, fmt.Errorf("PORT must not be empty")
+	}
+	if cfg.MediaDir == "" {
+		return Config{}, fmt.Errorf("MEDIA_DIR must not be empty")
 	}
 	if cfg.AppEnv == "production" && (cfg.JWTSecret == DevJWTSecret || len(cfg.JWTSecret) < 32) {
 		return Config{}, fmt.Errorf("JWT_SECRET must be set to a unique value of at least 32 characters when APP_ENV=production")

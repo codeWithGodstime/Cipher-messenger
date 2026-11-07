@@ -59,6 +59,24 @@ func NotFound(message string) *Error {
 	return &Error{Status: http.StatusNotFound, Code: "not_found", Message: message}
 }
 
+func PayloadTooLarge() *Error {
+	return &Error{
+		Status:  http.StatusRequestEntityTooLarge,
+		Code:    "payload_too_large",
+		Message: "Attachment is larger than 32 MiB.",
+	}
+}
+
+func Conflict(code, message string) *Error {
+	if code == "" {
+		code = "conflict"
+	}
+	if message == "" {
+		message = "The request conflicts with what is already stored."
+	}
+	return &Error{Status: http.StatusConflict, Code: code, Message: message}
+}
+
 func Forbidden(message string) *Error {
 	if message == "" {
 		message = "You do not have access to this resource."

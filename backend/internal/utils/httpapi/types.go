@@ -150,6 +150,20 @@ type SendMessageRequest struct {
 	Body string `json:"body" required:"true" description:"Encrypted message body."`
 }
 
+// AttachmentPath is the path for a ciphertext blob in a conversation.
+type AttachmentPath struct {
+	ID           string `path:"id" required:"true" description:"Conversation id."`
+	AttachmentID string `path:"attachmentId" required:"true" description:"Client-generated UUID for this ciphertext."`
+}
+
+// AttachmentStored is the JSON returned after a ciphertext upload.
+// It describes the bytes on disk. It does not include a decryption key.
+type AttachmentStored struct {
+	ID       string `json:"id" required:"true"`
+	ByteSize int64  `json:"byte_size" required:"true" description:"Ciphertext length in bytes."`
+	Digest   string `json:"digest" required:"true" description:"Lowercase hex SHA-256 of the ciphertext."`
+}
+
 // WSInfo documents the WebSocket upgrade at GET /ws.
 type WSInfo struct {
 	Protocol string `json:"protocol" required:"true" description:"JSON frames. Auth via Authorization Bearer or access_token query. Frames do not carry a token."`

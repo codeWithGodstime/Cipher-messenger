@@ -44,6 +44,11 @@ type response struct {
 	text   string
 }
 
+// binaryBody marks an application/octet-stream response in the OpenAPI document.
+type binaryBody struct {
+	digestHeader bool
+}
+
 type operation struct {
 	method      string
 	path        string
@@ -52,9 +57,10 @@ type operation struct {
 	description string
 	auth        bool
 	// request is path/query/json input reflected into parameters and body.
-	request   any
-	bodyOnly  bool // when true, request fields are JSON body only (legacy auth routes).
-	responses []response
+	request    any
+	bodyOnly   bool // when true, request fields are JSON body only (legacy auth routes).
+	binaryBody bool // when true, the request body is application/octet-stream.
+	responses  []response
 }
 
 func openAPI() (*openapi31.Spec, error) {
@@ -358,6 +364,45 @@ func openAPI() (*openapi31.Spec, error) {
 			},
 		},
 		{
+			method: http.MethodPut, path: "/conversations/{id}/attachments/{attachmentId}", id: "uploadAttachment",
+			summary: "Upload ciphertext",
+			description: "Stores an opaque ciphertext blob for a conversation the caller belongs to. " +
+				"The body is the raw ciphertext, not JSON. The server does not receive the key, the file name, or the media type. " +
+				"The client sends that metadata later inside a Signal message. " +
+				"A repeated upload of the same bytes by the same member returns 200. " +
+				"The same id with different bytes, or a different uploader, returns 409 and leaves the stored bytes unchanged. " +
+				"The body must be between 1 byte and 32 MiB.",
+			auth:       true,
+			request:    new(AttachmentPath),
+			binaryBody: true,
+			responses: []response{
+				{http.StatusCreated, new(AttachmentStored), "The ciphertext was stored."},
+				{http.StatusOK, new(AttachmentStored), "The same ciphertext was already stored for this id."},
+				failure(http.StatusBadRequest, "The attachment id is not a UUID, or the body is empty."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusForbidden, "The signed-in user is not a member."),
+				failure(http.StatusNotFound, "Conversation not found."),
+				failure(http.StatusConflict, "This attachment id is already stored with different bytes."),
+				failure(http.StatusRequestEntityTooLarge, "The ciphertext is larger than 32 MiB."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
+			method: http.MethodGet, path: "/conversations/{id}/attachments/{attachmentId}", id: "downloadAttachment",
+			summary:     "Download ciphertext",
+			description: "Returns the opaque ciphertext blob for a conversation the caller belongs to. The decryption key is not on the server.",
+			auth:        true,
+			request:     new(AttachmentPath),
+			responses: []response{
+				{http.StatusOK, binaryBody{digestHeader: true}, "The ciphertext bytes."},
+				failure(http.StatusBadRequest, "The attachment id is not a UUID."),
+				failure(http.StatusUnauthorized, "Missing or invalid access token."),
+				failure(http.StatusForbidden, "The signed-in user is not a member."),
+				failure(http.StatusNotFound, "Conversation or attachment not found."),
+				failure(http.StatusInternalServerError, "Unexpected failure."),
+			},
+		},
+		{
 			method: http.MethodGet, path: "/ws", id: "websocket",
 			summary: "Open a WebSocket",
 			description: "Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. " +
@@ -427,8 +472,61 @@ func add(r *openapi31.Reflector, item operation) error {
 			op.AddReqStructure(item.request)
 		}
 	}
+	if item.binaryBody {
+		op.AddReqStructure(new(string), openapi.WithContentType("application/octet-stream"), func(cu *openapi.ContentUnit) {
+			cu.Customize = asOctetStream(true, false)
+		})
+	}
 	for _, resp := range item.responses {
+		if blob, ok := resp.body.(binaryBody); ok {
+			op.AddRespStructure(
+				new(string),
+				openapi.WithContentType("application/octet-stream"),
+				status(resp.status, resp.text),
+				func(cu *openapi.ContentUnit) {
+					cu.Customize = asOctetStream(false, blob.digestHeader)
+				},
+			)
+			continue
+		}
 		op.AddRespStructure(resp.body, status(resp.status, resp.text))
 	}
 	return r.AddOperation(op)
+}
+
+// asOctetStream forces a binary body. The reflector would otherwise describe
+// the placeholder string as JSON.
+func asOctetStream(required, digestHeader bool) func(openapi.ContentOrReference) {
+	schema := map[string]interface{}{"type": "string", "format": "binary"}
+	return func(cor openapi.ContentOrReference) {
+		switch item := cor.(type) {
+		case *openapi31.RequestBodyOrReference:
+			if item.RequestBody == nil {
+				item.RequestBody = &openapi31.RequestBody{}
+			}
+			if item.RequestBody.Content == nil {
+				item.RequestBody.Content = map[string]openapi31.MediaType{}
+			}
+			delete(item.RequestBody.Content, "application/json")
+			item.RequestBody.Content["application/octet-stream"] = openapi31.MediaType{Schema: schema}
+			if required {
+				item.RequestBody.WithRequired(true)
+			}
+		case *openapi31.ResponseOrReference:
+			if item.Response == nil {
+				item.Response = &openapi31.Response{}
+			}
+			if item.Response.Content == nil {
+				item.Response.Content = map[string]openapi31.MediaType{}
+			}
+			delete(item.Response.Content, "application/json")
+			item.Response.Content["application/octet-stream"] = openapi31.MediaType{Schema: schema}
+			if digestHeader {
+				header := (&openapi31.Header{}).
+					WithDescription("Lowercase hex SHA-256 of the ciphertext.").
+					WithSchema(map[string]interface{}{"type": "string"})
+				item.Response.WithHeadersItem("X-Content-Digest", openapi31.HeaderOrReference{Header: header})
+			}
+		}
+	}
 }

@@ -85,7 +85,15 @@ func main() {
 	conversations := repository.NewConversationRepository(db)
 	messages := repository.NewMessageRepository(db)
 	chatService := service.NewChatService(users, conversations, messages, hub)
-	chat := handler.NewChatHandler(chatService)
+	attachments, err := service.NewAttachmentService(
+		conversations,
+		repository.NewAttachmentRepository(db),
+		cfg.MediaDir,
+	)
+	if err != nil {
+		log.Fatalf("media: %v", err)
+	}
+	chat := handler.NewChatHandler(chatService, attachments)
 	contacts := handler.NewContactHandler(
 		service.NewContactService(users, repository.NewContactRepository(db)),
 	)
@@ -105,7 +113,9 @@ func main() {
 			wsHandler,
 			middleware.RequireAccess(tokens, sessions),
 		),
-		ReadTimeout: 5 * time.Second,
+		// Headers stay on a short clock. The body timeout covers a 32 MiB ciphertext upload.
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       90 * time.Second,
 		// WriteTimeout must be zero so long-lived WebSocket connections are not killed.
 		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,

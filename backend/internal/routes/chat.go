@@ -11,4 +11,6 @@ func registerChat(r *gin.Engine, chat *handler.ChatHandler, authenticate gin.Han
 	r.POST("/conversations", authenticate, chat.OpenConversation)
 	r.GET("/conversations/:id/messages", authenticate, chat.ListMessages)
 	r.POST("/conversations/:id/messages", authenticate, chat.SendMessage)
+	r.PUT("/conversations/:id/attachments/:attachmentId", authenticate, chat.UploadAttachment)
+	r.GET("/conversations/:id/attachments/:attachmentId", authenticate, chat.DownloadAttachment)
 }

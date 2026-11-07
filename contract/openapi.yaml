@@ -326,6 +326,159 @@ paths:
       summary: Open or create a DM
       tags:
       - Messenger
+  /conversations/{id}/attachments/{attachmentId}:
+    get:
+      description: Returns the opaque ciphertext blob for a conversation the caller belongs to. The decryption key is not on the server.
+      operationId: downloadAttachment
+      parameters:
+      - description: Conversation id.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Conversation id.
+          type: string
+      - description: Client-generated UUID for this ciphertext.
+        in: path
+        name: attachmentId
+        required: true
+        schema:
+          description: Client-generated UUID for this ciphertext.
+          type: string
+      responses:
+        "200":
+          content:
+            application/octet-stream:
+              schema:
+                format: binary
+                type: string
+          description: The ciphertext bytes.
+          headers:
+            X-Content-Digest:
+              description: Lowercase hex SHA-256 of the ciphertext.
+              schema:
+                type: string
+              style: simple
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The attachment id is not a UUID.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The signed-in user is not a member.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conversation or attachment not found.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Download ciphertext
+      tags:
+      - Messenger
+    put:
+      description: Stores an opaque ciphertext blob for a conversation the caller belongs to. The body is the raw ciphertext, not JSON. The server does not receive the key, the file name, or the media type. The client sends that metadata later inside a Signal message. A repeated upload of the same bytes by the same member returns 200. The same id with different bytes, or a different uploader, returns 409 and leaves the stored bytes unchanged. The body must be between 1 byte and 32 MiB.
+      operationId: uploadAttachment
+      parameters:
+      - description: Conversation id.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Conversation id.
+          type: string
+      - description: Client-generated UUID for this ciphertext.
+        in: path
+        name: attachmentId
+        required: true
+        schema:
+          description: Client-generated UUID for this ciphertext.
+          type: string
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              format: binary
+              type: string
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentStored'
+          description: The same ciphertext was already stored for this id.
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentStored'
+          description: The ciphertext was stored.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The attachment id is not a UUID, or the body is empty.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The signed-in user is not a member.
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conversation not found.
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: This attachment id is already stored with different bytes.
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The ciphertext is larger than 32 MiB.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Upload ciphertext
+      tags:
+      - Messenger
   /conversations/{id}/messages:
     get:
       description: Returns messages newest first. Optional before (RFC3339) and limit (1-100, default 50).
@@ -541,7 +694,7 @@ paths:
       - Messenger
   /keys/{user_id}/bundle:
     post:
-      description: 'Returns another user''s identity public key, current signed prekey, and one one-time prekey so the caller can start a Signal session. The one-time prekey is removed from that user''s pool and is omitted when none remain. A session can still start from the identity key and signed prekey. This is not a read: repeating the call claims another one-time prekey.'
+      description: 'Returns another user''s identity public key, signed prekey, Kyber prekey, and one one-time prekey so the caller can start a Signal session. The one-time prekey is removed from that user''s pool and is omitted when none remain. A session can still start from the identity key, signed prekey, and Kyber prekey. This is not a read: repeating the call claims another one-time prekey.'
       operationId: claimPreKeyBundle
       parameters:
       - description: User id whose keys start a Signal session.
@@ -557,7 +710,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PreKeyBundle'
-          description: Identity key, signed prekey, and at most one one-time prekey.
+          description: Identity key, signed prekey, Kyber prekey, and at most one one-time prekey.
         "400":
           content:
             application/json:
@@ -575,7 +728,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-          description: User does not exist, or has not published an identity key and signed prekey.
+          description: User does not exist, or has not published an identity key, signed prekey, and Kyber prekey.
         "500":
           content:
             application/json:
@@ -585,6 +738,42 @@ paths:
       security:
       - bearerAuth: []
       summary: Claim a prekey bundle
+      tags:
+      - Messenger
+  /keys/kyber-prekey:
+    post:
+      description: Stores the signed-in user's current libsignal Kyber1024 prekey. Uploading again replaces it. Recipients need this key, with the identity key and signed prekey, to start a session.
+      operationId: uploadKyberPreKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadKyberPreKeyRequest'
+        required: true
+      responses:
+        "204":
+          description: The Kyber prekey was stored.
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The JSON body, key_id, public_key, or signature is invalid.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid access token.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Unexpected failure.
+      security:
+      - bearerAuth: []
+      summary: Upload a Kyber prekey
       tags:
       - Messenger
   /keys/one-time-prekeys:
@@ -808,7 +997,7 @@ paths:
       - Messenger
   /ws:
     get:
-      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), user.search.results (query, optional request_id, users, optional error). user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users. Each user has id, username, and display_name. When that user has published both an identity key and a signed prekey, the hit also includes identity_key and signed_pre_key so the client can message them. Both fields are omitted until both keys exist. A one-time prekey is not included; POST /keys/{user_id}/bundle claims one when the chat is opened. An empty or unusable query returns users []. search_failed is retryable by sending user.search again. Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. Example command: {"type":"user.search","query":"ada","request_id":"3"}. Example success: {"type":"user.search.results","query":"ada","request_id":"3","users":[{"id":"u2","username":"ada","display_name":"Ada","identity_key":"AQID","signed_pre_key":{"key_id":1,"public_key":"AQID","signature":"AQID"}}]}. Example empty: {"type":"user.search.results","query":"","request_id":"4","users":[]}. Example failure: {"type":"user.search.results","query":"ada","request_id":"3","users":[],"error":"search_failed"}.'
+      description: 'Upgrades to a WebSocket. Auth via Authorization Bearer or access_token query; frames do not carry a token. Client commands: ping, message.send (conversation_id, body), user.search (query, optional request_id). Server events: pong, message.created (message), error (error code invalid_json, validation_error, send_failed, or unknown_type), user.search.results (query, optional request_id, users, optional error). user.search matches username case-insensitively as a substring, ranks prefix matches first, excludes the signed-in user, and returns at most 20 users. Each user has id, username, and display_name. When that user has published an identity key, a signed prekey, and a Kyber prekey, the hit also includes identity_key, signed_pre_key, and kyber_pre_key. All three are omitted until all three exist. A one-time prekey is not included; POST /keys/{user_id}/bundle claims one when a session is started. An empty or unusable query returns users []. search_failed is retryable by sending user.search again. Echoed request_id (1 to 64 characters, no spaces) lets the client ignore a stale response. No paging cursor: a short fragment may omit later matches. Keepalive: ping/pong. Example command: {"type":"user.search","query":"ada","request_id":"3"}. Example success: {"type":"user.search.results","query":"ada","request_id":"3","users":[{"id":"u2","username":"ada","display_name":"Ada","identity_key":"AQID","signed_pre_key":{"key_id":1,"public_key":"AQID","signature":"AQID"},"kyber_pre_key":{"key_id":1,"public_key":"AQID","signature":"AQID"}}]}. Example empty: {"type":"user.search.results","query":"","request_id":"4","users":[]}. Example failure: {"type":"user.search.results","query":"ada","request_id":"3","users":[],"error":"search_failed"}.'
       operationId: websocket
       responses:
         "101":
@@ -842,6 +1031,22 @@ components:
         username:
           description: Peer username handle.
           type: string
+      type: object
+    AttachmentStored:
+      properties:
+        byte_size:
+          description: Ciphertext length in bytes.
+          format: int64
+          type: integer
+        digest:
+          description: Lowercase hex SHA-256 of the ciphertext.
+          type: string
+        id:
+          type: string
+      required:
+      - id
+      - byte_size
+      - digest
       type: object
     AuthRequest:
       properties:
@@ -953,6 +1158,22 @@ components:
       - public_key
       - created_at
       type: object
+    KyberPreKey:
+      properties:
+        key_id:
+          description: libsignal Kyber prekey id.
+          type: integer
+        public_key:
+          description: Base64-encoded Kyber1024 public key (1569 bytes).
+          type: string
+        signature:
+          description: Base64-encoded XEdDSA signature of the public key (64 bytes).
+          type: string
+      required:
+      - key_id
+      - public_key
+      - signature
+      type: object
     Message:
       properties:
         body:
@@ -1019,6 +1240,8 @@ components:
         identity_key:
           description: Base64-encoded libsignal identity public key (33 bytes).
           type: string
+        kyber_pre_key:
+          $ref: '#/components/schemas/KyberPreKey'
         pre_key:
           $ref: '#/components/schemas/OneTimePreKey'
           description: One-time prekey claimed by this request. Omitted when the user has none left.
@@ -1027,6 +1250,7 @@ components:
       required:
       - identity_key
       - signed_pre_key
+      - kyber_pre_key
       type: object
     Profile:
       properties:
@@ -1084,7 +1308,7 @@ components:
     SendMessageRequest:
       properties:
         body:
-          description: 1 to 4000 characters.
+          description: Encrypted message body.
           type: string
       required:
       - body
@@ -1147,6 +1371,22 @@ components:
       - refresh_token
       - token_type
       - expires_in
+      type: object
+    UploadKyberPreKeyRequest:
+      properties:
+        key_id:
+          description: libsignal Kyber prekey id, from 0 through 16777215.
+          type: integer
+        public_key:
+          description: Base64-encoded Kyber1024 public key (1569 bytes).
+          type: string
+        signature:
+          description: Base64-encoded XEdDSA signature of the public key (64 bytes).
+          type: string
+      required:
+      - key_id
+      - public_key
+      - signature
       type: object
     UploadOneTimePreKeysRequest:
       properties:

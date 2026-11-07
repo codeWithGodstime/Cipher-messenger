@@ -57,6 +57,24 @@ type Message struct {
 
 func (Message) TableName() string { return "messages" }
 
+// MaxAttachmentBytes is the largest ciphertext blob an upload may store.
+// The file key is not in this blob; it travels inside the Signal message.
+const MaxAttachmentBytes = 32 << 20
+
+// Attachment is one opaque ciphertext object for a conversation.
+// The server stores the bytes and their SHA-256. It does not store a file name,
+// a media type, or the key that decrypts the bytes.
+type Attachment struct {
+	ID             string    `gorm:"primaryKey;size:36"`
+	ConversationID string    `gorm:"size:36;not null;index"`
+	UploaderID     string    `gorm:"size:36;not null;index"`
+	ByteSize       int64     `gorm:"not null"`
+	Digest         string    `gorm:"size:64;not null"`
+	CreatedAt      time.Time `gorm:"not null"`
+}
+
+func (Attachment) TableName() string { return "attachments" }
+
 // Contact is a saved peer for the owner. Unique per owner+peer pair.
 type Contact struct {
 	ID        string    `gorm:"primaryKey;size:36"`

@@ -8,7 +8,7 @@ import (
 	"messenger/backend/internal/model"
 )
 
-// Migrate creates the auth, profile, chat, contact, and key tables.
+// Migrate creates the auth, profile, chat, contact, key, and attachment tables.
 // The project has no migration tool; AutoMigrate matches the GORM connection
 // already used by this package. OTP codes live in Redis, so a leftover
 // otp_challenges table is dropped on startup. Early installs keyed users by
@@ -34,6 +34,7 @@ func Migrate(db *gorm.DB) error {
 		&model.Conversation{},
 		&model.ConversationMember{},
 		&model.Message{},
+		&model.Attachment{},
 		&model.Contact{},
 		&model.IdentityKey{},
 		&model.SignedPreKey{},

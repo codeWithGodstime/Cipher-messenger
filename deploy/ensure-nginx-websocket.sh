@@ -69,6 +69,22 @@ for conf in "${configs[@]}"; do
   echo "patched $conf for /ws websocket proxy"
 done
 
+# Ciphertext uploads are up to 32 MiB. The default nginx body limit is 1m.
+cat >/etc/nginx/conf.d/messenger-upload-size.conf <<'EOF'
+client_max_body_size 32m;
+EOF
+
+install -d /var/lib/messenger/media
+chmod 700 /var/lib/messenger/media
+install -d /etc/systemd/system/messenger-api.service.d
+cat >/etc/systemd/system/messenger-api.service.d/media.conf <<'EOF'
+[Service]
+Environment=MEDIA_DIR=/var/lib/messenger/media
+EOF
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload
+fi
+
 nginx -t
 systemctl reload nginx
 echo "nginx websocket proxy ready (patched=$patched)"

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,11 +17,12 @@ import (
 )
 
 type ChatHandler struct {
-	chat *service.ChatService
+	chat  *service.ChatService
+	media *service.AttachmentService
 }
 
-func NewChatHandler(chat *service.ChatService) *ChatHandler {
-	return &ChatHandler{chat: chat}
+func NewChatHandler(chat *service.ChatService, media *service.AttachmentService) *ChatHandler {
+	return &ChatHandler{chat: chat, media: media}
 }
 
 func (h *ChatHandler) ListConversations(c *gin.Context) {
@@ -117,6 +120,62 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, httpapi.NewMessage(message))
+}
+
+func (h *ChatHandler) UploadAttachment(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, apperr.Unauthorized())
+		return
+	}
+	limited := http.MaxBytesReader(c.Writer, c.Request.Body, model.MaxAttachmentBytes)
+	defer limited.Close()
+	stored, created, err := h.media.Save(
+		c.Request.Context(),
+		userID,
+		c.Param("id"),
+		c.Param("attachmentId"),
+		limited,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, httpapi.AttachmentStored{
+		ID:       stored.ID,
+		ByteSize: stored.ByteSize,
+		Digest:   stored.Digest,
+	})
+}
+
+func (h *ChatHandler) DownloadAttachment(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		writeError(c, apperr.Unauthorized())
+		return
+	}
+	stored, file, err := h.media.Open(
+		c.Request.Context(),
+		userID,
+		c.Param("id"),
+		c.Param("attachmentId"),
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	defer file.Close()
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Length", strconv.FormatInt(stored.ByteSize, 10))
+	c.Header("X-Content-Digest", stored.Digest)
+	c.Status(http.StatusOK)
+	if _, err := io.Copy(c.Writer, file); err != nil {
+		log.Printf("attachment download: %v", err)
+	}
 }
 
 func toConversation(summary service.ConversationSummary) httpapi.Conversation {

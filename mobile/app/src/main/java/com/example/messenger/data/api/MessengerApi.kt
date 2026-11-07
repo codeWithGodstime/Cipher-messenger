@@ -1,5 +1,6 @@
 package com.example.messenger.data.api
 
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -8,6 +9,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -84,6 +86,21 @@ interface MessengerApi {
         @Header("Authorization") authorization: String,
         @Path("id") conversationId: String,
         @Body body: SendMessageRequest,
+    ): Response<ResponseBody>
+
+    @PUT("conversations/{id}/attachments/{attachmentId}")
+    suspend fun uploadAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("id") conversationId: String,
+        @Path("attachmentId") attachmentId: String,
+        @Body body: RequestBody,
+    ): Response<ResponseBody>
+
+    @GET("conversations/{id}/attachments/{attachmentId}")
+    suspend fun downloadAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("id") conversationId: String,
+        @Path("attachmentId") attachmentId: String,
     ): Response<ResponseBody>
 
     @POST("keys/")

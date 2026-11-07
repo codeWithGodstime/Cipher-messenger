@@ -1,11 +1,23 @@
 package com.example.messenger.ui.home
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.media.MediaRecorder
+import android.os.Build
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +25,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -43,6 +56,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,27 +67,41 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.messenger.ui.theme.CipherTheme
 import com.example.messenger.ui.theme.MessengerTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Locale
+import java.util.UUID
 
 @Composable
 fun ConversationScreen(
@@ -83,13 +111,118 @@ fun ConversationScreen(
     onSend: (String) -> Unit,
     onTogglePin: () -> Unit,
     onNotice: (String) -> Unit,
+    onSendMedia: (Uri, String) -> Unit = { _, _ -> },
+    onSendVoice: (File) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
+    val context = LocalContext.current
     var draft by rememberSaveable(thread.id) { mutableStateOf("") }
     var menu by rememberSaveable(thread.id) { mutableStateOf(false) }
     var sheet by rememberSaveable(thread.id) { mutableStateOf(false) }
+    var recording by remember(thread.id) { mutableStateOf(false) }
+    val voiceRecorder = remember { mutableStateOf<MediaRecorder?>(null) }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val rows = conversationRows(messages)
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onSendMedia(uri, "image")
+    }
+    val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onSendMedia(uri, "video")
+    }
+    val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) onSendMedia(uri, "audio")
+    }
+    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onSendMedia(uri, "file")
+    }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = cameraUri
+        cameraUri = null
+        if (saved && uri != null) onSendMedia(uri, "image")
+    }
+    fun launchCamera() {
+        val uri = newCameraUri(context)
+        if (uri == null) {
+            onNotice("Couldn't open the camera.")
+            return
+        }
+        cameraUri = uri
+        takePicture.launch(uri)
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera() else onNotice("Camera permission is needed to take a photo.")
+    }
+    fun ensureCamera() {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) launchCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+    fun releaseVoiceRecorder() {
+        val active = voiceRecorder.value ?: return
+        voiceRecorder.value = null
+        runCatching { active.stop() }
+        runCatching { active.release() }
+    }
+    fun startVoice() {
+        val file = File(context.cacheDir, VOICE_DRAFT)
+        runCatching { if (file.exists()) file.delete() }
+        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(context)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
+        try {
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare()
+            recorder.start()
+        } catch (error: Exception) {
+            runCatching { recorder.release() }
+            onNotice("Couldn't start the voice note.")
+            return
+        }
+        voiceRecorder.value = recorder
+        recording = true
+    }
+    fun stopVoice() {
+        val active = voiceRecorder.value
+        voiceRecorder.value = null
+        recording = false
+        if (active == null) return
+        val file = File(context.cacheDir, VOICE_DRAFT)
+        try {
+            active.stop()
+        } catch (error: Exception) {
+            runCatching { active.release() }
+            onNotice("Couldn't save the voice note.")
+            return
+        }
+        runCatching { active.release() }
+        onSendVoice(file)
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoice() else onNotice("Microphone permission is needed for a voice note.")
+    }
+    fun onMic() {
+        if (recording) {
+            stopVoice()
+            return
+        }
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) startVoice() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    DisposableEffect(thread.id) {
+        onDispose { releaseVoiceRecorder() }
+    }
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
@@ -141,7 +274,11 @@ fun ConversationScreen(
                 items(rows.asReversed(), key = { it.key }) { row ->
                     when (row) {
                         is ConversationRow.Day -> DayChip(row.label)
-                        is ConversationRow.Bubble -> MessageBubble(message = row.message, thread = thread)
+                        is ConversationRow.Bubble -> MessageBubble(
+                            message = row.message,
+                            thread = thread,
+                            onNotice = onNotice,
+                        )
                     }
                 }
                 item(key = "banner") { EncryptionBanner() }
@@ -150,6 +287,9 @@ fun ConversationScreen(
                 value = draft,
                 onValueChange = { draft = it },
                 onAttach = { sheet = true },
+                recording = recording,
+                onCamera = { ensureCamera() },
+                onMic = { onMic() },
                 onSend = {
                     val body = draft.trim()
                     if (body.isEmpty()) return@Composer
@@ -157,12 +297,31 @@ fun ConversationScreen(
                     draft = ""
                     keyboard?.show()
                 },
-                onNotice = onNotice,
             )
         }
         if (sheet) {
             AttachmentSheet(
                 onDismiss = { sheet = false },
+                onPhoto = {
+                    sheet = false
+                    pickPhoto.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                },
+                onVideo = {
+                    sheet = false
+                    pickVideo.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                    )
+                },
+                onAudio = {
+                    sheet = false
+                    pickAudio.launch("audio/*")
+                },
+                onDocument = {
+                    sheet = false
+                    pickDocument.launch(arrayOf("*/*"))
+                },
                 onNotice = {
                     sheet = false
                     onNotice(it)
@@ -368,12 +527,34 @@ private fun EncryptionBanner(modifier: Modifier = Modifier) {
 private fun MessageBubble(
     message: CipherMessage,
     thread: ChatThread,
+    onNotice: (String) -> Unit,
 ) {
     val spacing = CipherTheme.spacing
+    val context = LocalContext.current
     val bubble = if (message.outgoing) {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
     } else {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
+    }
+    val contentColor = if (message.outgoing) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val bubbleColor = if (message.outgoing) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceContainer
+    }
+    val elevation = if (message.outgoing) 2.dp else 1.dp
+    val attachment = message.attachment
+    val localPath = attachment?.localPath
+    val openFile: (() -> Unit)? = if (attachment != null && !localPath.isNullOrBlank()) {
+        {
+            openLocalAttachment(context, localPath, attachment.mime, onNotice)
+        }
+    } else {
+        null
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -393,25 +574,23 @@ private fun MessageBubble(
             horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
             modifier = Modifier.widthIn(max = 280.dp),
         ) {
-            Surface(
-                shape = bubble,
-                color = if (message.outgoing) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainer
-                },
-                shadowElevation = if (message.outgoing) 2.dp else 1.dp,
-            ) {
-                Text(
-                    text = message.body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (message.outgoing) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
-                )
+            if (openFile != null) {
+                Surface(
+                    onClick = openFile,
+                    shape = bubble,
+                    color = bubbleColor,
+                    shadowElevation = elevation,
+                ) {
+                    BubbleBody(message, contentColor)
+                }
+            } else {
+                Surface(
+                    shape = bubble,
+                    color = bubbleColor,
+                    shadowElevation = elevation,
+                ) {
+                    BubbleBody(message, contentColor)
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -437,12 +616,131 @@ private fun MessageBubble(
 }
 
 @Composable
+private fun BubbleBody(
+    message: CipherMessage,
+    contentColor: androidx.compose.ui.graphics.Color,
+) {
+    val spacing = CipherTheme.spacing
+    val attachment = message.attachment
+    if (attachment == null) {
+        Text(
+            text = message.body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = contentColor,
+            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+        )
+        return
+    }
+    if (attachment.kind == "image") {
+        Column(
+            modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            if (attachment.localPath.isNullOrBlank()) {
+                Text(
+                    text = "Photo",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                    modifier = Modifier.padding(horizontal = spacing.xs),
+                )
+                Text(
+                    text = "Waiting for the encrypted file…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor.copy(alpha = 0.75f),
+                    modifier = Modifier.padding(horizontal = spacing.xs),
+                )
+            } else {
+                AttachmentPreview(
+                    path = attachment.localPath,
+                    contentDescription = attachment.name,
+                    color = contentColor,
+                )
+                Text(
+                    text = attachment.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = spacing.xs),
+                )
+            }
+        }
+        return
+    }
+    val icon = when (attachment.kind) {
+        "video" -> Icons.Filled.PlayArrow
+        "audio" -> Icons.Filled.Headphones
+        else -> Icons.Filled.Description
+    }
+    Row(
+        modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(22.dp),
+        )
+        Column(modifier = Modifier.widthIn(max = 180.dp)) {
+            Text(
+                text = attachment.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = formatByteSize(attachment.sizeBytes),
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor.copy(alpha = 0.75f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttachmentPreview(
+    path: String,
+    contentDescription: String,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    var bitmap by remember(path) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(path) {
+        val decoded = withContext(Dispatchers.IO) { decodePreview(path, 1280) }
+        bitmap = decoded?.asImageBitmap()
+    }
+    val image = bitmap
+    if (image != null) {
+        Image(
+            bitmap = image,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 240.dp)
+                .clip(RoundedCornerShape(12.dp)),
+        )
+    } else {
+        Text(
+            text = "Photo",
+            style = MaterialTheme.typography.bodyMedium,
+            color = color,
+            modifier = Modifier.padding(CipherTheme.spacing.xs),
+        )
+    }
+}
+
+@Composable
 private fun Composer(
     value: String,
     onValueChange: (String) -> Unit,
     onAttach: () -> Unit,
+    recording: Boolean,
+    onCamera: () -> Unit,
+    onMic: () -> Unit,
     onSend: () -> Unit,
-    onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = CipherTheme.spacing
@@ -480,27 +778,42 @@ private fun Composer(
                     Box {
                         if (value.isEmpty()) {
                             Text(
-                                text = "Message...",
+                                text = if (recording) "Recording…" else "Message...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (recording) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             )
                         }
                         inner()
                     }
                 },
             )
-            IconButton(onClick = { onNotice("Camera is not connected in this build.") }) {
+            if (recording && value.isNotEmpty()) {
+                Text(
+                    text = "Recording…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            IconButton(onClick = onCamera) {
                 Icon(
                     imageVector = Icons.Filled.PhotoCamera,
                     contentDescription = "Camera",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = { onNotice("Voice notes are not connected in this build.") }) {
+            IconButton(onClick = onMic) {
                 Icon(
                     imageVector = Icons.Filled.Mic,
-                    contentDescription = "Voice note",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    contentDescription = if (recording) "Stop voice note" else "Voice note",
+                    tint = if (recording) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
             Surface(
@@ -525,6 +838,10 @@ private fun Composer(
 @Composable
 private fun AttachmentSheet(
     onDismiss: () -> Unit,
+    onPhoto: () -> Unit,
+    onVideo: () -> Unit,
+    onAudio: () -> Unit,
+    onDocument: () -> Unit,
     onNotice: (String) -> Unit,
 ) {
     val spacing = CipherTheme.spacing
@@ -577,19 +894,15 @@ private fun AttachmentSheet(
                             )
                         }
                     }
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(spacing.lg),
                     ) {
-                        ShareAction(Icons.Filled.Image, "Photo", MaterialTheme.colorScheme.primaryFixed, MaterialTheme.colorScheme.primary) {
-                            onNotice("Photos are not connected in this build.")
-                        }
-                        ShareAction(Icons.Filled.Description, "Document", MaterialTheme.colorScheme.secondaryFixed, MaterialTheme.colorScheme.secondary) {
-                            onNotice("Documents are not connected in this build.")
-                        }
-                        ShareAction(Icons.Filled.Headphones, "Audio", MaterialTheme.colorScheme.tertiaryFixed, MaterialTheme.colorScheme.tertiary) {
-                            onNotice("Audio is not connected in this build.")
-                        }
+                        ShareAction(Icons.Filled.Image, "Photo", MaterialTheme.colorScheme.primaryFixed, MaterialTheme.colorScheme.primary, onPhoto)
+                        ShareAction(Icons.Filled.Videocam, "Video", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimary, onVideo)
+                        ShareAction(Icons.Filled.Description, "Document", MaterialTheme.colorScheme.secondaryFixed, MaterialTheme.colorScheme.secondary, onDocument)
+                        ShareAction(Icons.Filled.Headphones, "Audio", MaterialTheme.colorScheme.tertiaryFixed, MaterialTheme.colorScheme.tertiary, onAudio)
                         ShareAction(Icons.Filled.LocationOn, "Location", MaterialTheme.colorScheme.primaryFixedDim, MaterialTheme.colorScheme.onPrimaryFixed) {
                             onNotice("Location is not connected in this build.")
                         }
@@ -630,6 +943,63 @@ private fun ShareAction(
         )
     }
 }
+
+private fun newCameraUri(context: android.content.Context): Uri? {
+    val dir = File(context.cacheDir, "camera")
+    if (!dir.exists() && !dir.mkdirs()) return null
+    val file = File(dir, "${UUID.randomUUID()}.jpg")
+    if (!file.exists() && !file.createNewFile()) return null
+    return runCatching {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }.getOrNull()
+}
+
+private fun openLocalAttachment(
+    context: android.content.Context,
+    path: String,
+    mime: String,
+    onNotice: (String) -> Unit,
+) {
+    val file = File(path)
+    if (!file.isFile) return
+    val uri = runCatching {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }.getOrNull() ?: return
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mime.ifBlank { "application/octet-stream" })
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    if (runCatching { context.startActivity(intent) }.isFailure) {
+        onNotice("No app on this device can open this file.")
+    }
+}
+
+private fun decodePreview(path: String, maxEdge: Int): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    val width = bounds.outWidth
+    val height = bounds.outHeight
+    if (width <= 0 || height <= 0) return null
+    var sample = 1
+    while (width / sample > maxEdge || height / sample > maxEdge) {
+        sample *= 2
+    }
+    return BitmapFactory.decodeFile(
+        path,
+        BitmapFactory.Options().apply { inSampleSize = sample },
+    )
+}
+
+private fun formatByteSize(bytes: Long): String {
+    val size = bytes.coerceAtLeast(0L)
+    return when {
+        size < 1024L -> "$size B"
+        size < 1024L * 1024L -> "${size / 1024L} KB"
+        else -> "%.1f MB".format(Locale.US, size / (1024.0 * 1024.0))
+    }
+}
+
+private const val VOICE_DRAFT = "voice-draft.m4a"
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 884)
 @Composable

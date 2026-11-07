@@ -7,12 +7,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
 import com.example.messenger.crypto.AccountDeviceData
 import com.example.messenger.crypto.DeviceProtocolStore
 import com.example.messenger.crypto.IdentityStore
 import com.example.messenger.crypto.LocalPreKeyStore
+import com.example.messenger.crypto.MediaCipher
+import com.example.messenger.crypto.MediaEnvelope
+import com.example.messenger.crypto.MediaFileCache
+import com.example.messenger.crypto.MediaMessages
 import com.example.messenger.crypto.MessageCipher
 import com.example.messenger.crypto.SentPlaintextStore
 import com.example.messenger.crypto.signalCiphertextType
@@ -28,6 +34,7 @@ import com.example.messenger.data.chat.ChatCall
 import com.example.messenger.data.chat.ChatCrypto
 import com.example.messenger.data.chat.ChatRepository
 import com.example.messenger.data.chat.CryptoCall
+import com.example.messenger.data.chat.MediaRepository
 import com.example.messenger.data.chat.MessengerSocket
 import com.example.messenger.data.chat.UserSearchFrame
 import com.example.messenger.data.chat.acceptUserSearch
@@ -52,6 +59,12 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
+import java.security.MessageDigest
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 class ChatViewModel(
@@ -64,7 +77,10 @@ class ChatViewModel(
     private val crypto: ChatCrypto,
     private val socket: MessengerSocket,
     private val accountData: AccountDeviceData,
+    private val appContext: Context,
+    private val mediaRepository: MediaRepository,
 ) : ViewModel() {
+    private val mediaCache = MediaFileCache(appContext)
     var threads by mutableStateOf<List<ChatThread>>(emptyList())
         private set
     var messages by mutableStateOf<Map<String, List<CipherMessage>>>(emptyMap())
@@ -113,6 +129,8 @@ class ChatViewModel(
     private val localPins = mutableMapOf<String, Boolean>()
     private val preKeyRefresh = Mutex()
     private val historyGate = Mutex()
+    private val mediaDownloads = Mutex()
+    private val downloadingIds = mutableSetOf<String>()
 
     val peerContacts: List<ContactEntry>
         get() {
@@ -319,6 +337,20 @@ class ChatViewModel(
         }
     }
 
+    fun sendMedia(conversationId: String, uri: Uri, kind: String) {
+        notice = "Encrypting attachment…"
+        viewModelScope.launch {
+            deliverMedia(conversationId) { readUri(uri, kind) }
+        }
+    }
+
+    fun sendVoiceFile(conversationId: String, file: File) {
+        notice = "Encrypting attachment…"
+        viewModelScope.launch {
+            deliverMedia(conversationId) { readVoice(file) }
+        }
+    }
+
     fun togglePin(conversationId: String) {
         val current = threads.firstOrNull { it.id == conversationId } ?: return
         val pinned = !current.pinned
@@ -500,11 +532,13 @@ class ChatViewModel(
                 null
             }
             is ChatCall.Ok -> {
-                val history = plainMessages(result.value, peerId)
+                val revealed = revealMessages(result.value, peerId)
+                val history = revealed.map { it.message }
                 val merged = mergeHistory(messages[conversationId].orEmpty(), history)
                 messages = messages + (conversationId to merged)
                 loadedConversations += conversationId
-                merged
+                scheduleMedia(conversationId, revealed)
+                history
             }
         }
     }
@@ -531,10 +565,10 @@ class ChatViewModel(
         return ChatCall.Ok(newestFirst.distinctBy { it.id })
     }
 
-    private suspend fun plainMessages(apiMessages: List<ApiMessage>, peerId: String): List<CipherMessage> {
-        val ordered = ArrayList<CipherMessage>(apiMessages.size)
+    private suspend fun revealMessages(apiMessages: List<ApiMessage>, peerId: String): List<RevealedMessage> {
+        val ordered = ArrayList<RevealedMessage>(apiMessages.size)
         for (message in apiMessages.asReversed()) {
-            ordered += message.toCipherMessage(userId).copy(body = plainBody(message, peerId))
+            ordered += revealMessage(message, peerId)
         }
         return ordered
     }
@@ -564,11 +598,12 @@ class ChatViewModel(
             if (threads.none { it.id == message.conversationId }) refreshConversations()
             return
         }
-        val plain = plainBody(message, peerId)
-        val cipher = message.toCipherMessage(userId).copy(body = plain)
+        val revealed = revealMessage(message, peerId)
+        val cipher = revealed.message
         messages = messages + (message.conversationId to (current + cipher))
+        scheduleMedia(message.conversationId, listOf(revealed))
         val viewing = activeConversationId == message.conversationId
-        updateThreadFromMessage(message, plain, bumpUnread = !viewing && !cipher.outgoing)
+        updateThreadFromMessage(message, cipher.body, bumpUnread = !viewing && !cipher.outgoing)
         if (threads.none { it.id == message.conversationId }) {
             refreshConversations()
         }
@@ -626,6 +661,259 @@ class ChatViewModel(
         usernameResults = frame.users.map { it.asPerson() }
     }
 
+    private suspend fun deliverMedia(
+        conversationId: String,
+        read: suspend () -> PreparedMedia,
+    ) {
+        val peerId = threads.firstOrNull { it.id == conversationId }?.peerId.orEmpty()
+        if (peerId.isBlank() || userId.isBlank()) {
+            notice = "Can't encrypt this chat yet."
+            return
+        }
+        val token = requireAccessToken() ?: run {
+            notice = "Sign in again to send messages."
+            return
+        }
+        val prepared = read()
+        val ready = when (prepared) {
+            is PreparedMedia.Failed -> {
+                notice = prepared.message
+                return
+            }
+            is PreparedMedia.Ready -> prepared
+        }
+        val attachmentId = UUID.randomUUID().toString()
+        val sealed = try {
+            withContext(Dispatchers.IO) { MediaCipher.seal(ready.bytes, attachmentId) }
+        } catch (error: Exception) {
+            notice = "Couldn't encrypt this attachment."
+            return
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                mediaCache.write(attachmentId, ready.name, ready.bytes)
+            }
+        } catch (error: Exception) {
+            notice = "Couldn't save this attachment on this device."
+            return
+        }
+        val stored = when (val uploaded = mediaRepository.upload(token, conversationId, attachmentId, sealed.ciphertext)) {
+            is ChatCall.Failed -> {
+                notice = uploaded.message
+                return
+            }
+            is ChatCall.Ok -> uploaded.value
+        }
+        if (!stored.digest.equals(sealed.digestHex, ignoreCase = true)) {
+            notice = "The server stored different bytes than this device encrypted."
+            return
+        }
+        val envelope = MediaMessages.encode(
+            kind = ready.kind,
+            mime = ready.mime,
+            name = ready.name,
+            size = ready.bytes.size.toLong(),
+            attachmentId = attachmentId,
+            key = sealed.key,
+            nonce = sealed.nonce,
+            digestHex = sealed.digestHex,
+        )
+        val signalBody = when (val encrypted = crypto.encrypt(userId, token, peerId, envelope)) {
+            is CryptoCall.Ok -> encrypted.body
+            is CryptoCall.Failed -> {
+                notice = encrypted.message
+                return
+            }
+        }
+        if (socket.sendMessage(conversationId, signalBody)) {
+            notice = null
+            return
+        }
+        when (val result = repository.sendMessage(token, conversationId, signalBody)) {
+            is ChatCall.Ok -> {
+                notice = null
+                onIncomingMessage(result.value)
+            }
+            is ChatCall.Failed -> notice = result.message
+        }
+    }
+
+    private suspend fun readUri(uri: Uri, kind: String): PreparedMedia = withContext(Dispatchers.IO) {
+        val mime = appContext.contentResolver.getType(uri) ?: mimeFor(kind)
+        val name = displayName(uri)
+        val stream = try {
+            appContext.contentResolver.openInputStream(uri)
+        } catch (error: Exception) {
+            null
+        } ?: return@withContext PreparedMedia.Failed("Couldn't read this attachment.")
+        val bytes = try {
+            readCapped(stream)
+        } catch (error: Exception) {
+            return@withContext PreparedMedia.Failed("Couldn't read this attachment.")
+        } ?: return@withContext PreparedMedia.Failed("This attachment is too large to send.")
+        PreparedMedia.Ready(bytes, kind, mime, name)
+    }
+
+    private suspend fun readVoice(file: File): PreparedMedia = withContext(Dispatchers.IO) {
+        if (!file.isFile) return@withContext PreparedMedia.Failed("Couldn't read the voice note.")
+        val bytes = try {
+            readCapped(file.inputStream())
+        } catch (error: Exception) {
+            return@withContext PreparedMedia.Failed("Couldn't read the voice note.")
+        } ?: return@withContext PreparedMedia.Failed("This attachment is too large to send.")
+        file.delete()
+        PreparedMedia.Ready(bytes, "audio", "audio/mp4", "Voice message.m4a")
+    }
+
+    private fun readCapped(input: InputStream): ByteArray? {
+        input.use { stream ->
+            val out = ByteArrayOutputStream()
+            val chunk = ByteArray(64 * 1024)
+            var total = 0L
+            val max = MediaCipher.MAX_PLAINTEXT_BYTES.toLong()
+            while (true) {
+                val count = stream.read(chunk)
+                if (count < 0) break
+                total += count.toLong()
+                if (total > max) return null
+                out.write(chunk, 0, count)
+            }
+            return out.toByteArray()
+        }
+    }
+
+    private fun displayName(uri: Uri): String {
+        val queried = runCatching {
+            appContext.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index < 0) null else cursor.getString(index)?.takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()
+        if (!queried.isNullOrBlank()) return queried
+        return uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: "file"
+    }
+
+    private fun mimeFor(kind: String): String = when (kind) {
+        "image" -> "image/jpeg"
+        "video" -> "video/mp4"
+        "audio" -> "audio/mp4"
+        else -> "application/octet-stream"
+    }
+
+    private suspend fun revealMessage(message: ApiMessage, peerId: String): RevealedMessage {
+        val plain = plainBody(message, peerId)
+        val base = message.toCipherMessage(userId)
+        val envelope = MediaMessages.parse(plain) ?: return RevealedMessage(base.copy(body = plain))
+        val cached = withContext(Dispatchers.IO) { mediaCache.existing(envelope.attachmentId) }
+        val attachment = ChatAttachment(
+            kind = envelope.kind,
+            mime = envelope.mime,
+            name = envelope.name,
+            sizeBytes = envelope.size,
+            attachmentId = envelope.attachmentId,
+            localPath = cached?.absolutePath,
+        )
+        return RevealedMessage(
+            message = base.copy(body = MediaMessages.snippet(plain), attachment = attachment),
+            envelope = envelope,
+        )
+    }
+
+    private fun scheduleMedia(conversationId: String, revealed: List<RevealedMessage>) {
+        for (item in revealed) {
+            val envelope = item.envelope ?: continue
+            if (item.message.attachment?.localPath != null) continue
+            if (!downloadingIds.add(envelope.attachmentId)) continue
+            val messageId = item.message.id
+            viewModelScope.launch {
+                try {
+                    fetchMedia(conversationId, messageId, envelope)
+                } finally {
+                    downloadingIds.remove(envelope.attachmentId)
+                }
+            }
+        }
+    }
+
+    private suspend fun fetchMedia(conversationId: String, messageId: String, envelope: MediaEnvelope) {
+        mediaDownloads.withLock {
+            val current = messages[conversationId].orEmpty().firstOrNull { it.id == messageId }
+            if (current?.attachment?.localPath != null) return@withLock
+            val cached = withContext(Dispatchers.IO) { mediaCache.existing(envelope.attachmentId) }
+            if (cached != null) {
+                assignLocalPath(conversationId, messageId, cached.absolutePath)
+                return@withLock
+            }
+            val token = requireAccessToken() ?: run {
+                notice = "Sign in again to load this attachment."
+                return@withLock
+            }
+            val ciphertext = when (val result = mediaRepository.download(token, conversationId, envelope.attachmentId)) {
+                is ChatCall.Failed -> {
+                    notice = result.message
+                    return@withLock
+                }
+                is ChatCall.Ok -> result.value
+            }
+            val file = try {
+                withContext(Dispatchers.IO) {
+                    val actual = sha256Hex(ciphertext)
+                    if (!actual.equals(envelope.digestHex, ignoreCase = true)) return@withContext null
+                    val plain = MediaCipher.open(
+                        ciphertext,
+                        envelope.key,
+                        envelope.nonce,
+                        envelope.attachmentId,
+                        envelope.digestHex,
+                    )
+                    mediaCache.write(envelope.attachmentId, envelope.name, plain)
+                }
+            } catch (error: Exception) {
+                notice = "Couldn't open this attachment."
+                return@withLock
+            }
+            if (file == null) {
+                notice = "The encrypted file didn't match this message."
+                return@withLock
+            }
+            assignLocalPath(conversationId, messageId, file.absolutePath)
+        }
+    }
+
+    private fun assignLocalPath(conversationId: String, messageId: String, path: String) {
+        val current = messages[conversationId] ?: return
+        var changed = false
+        val updated = current.map { message ->
+            val attachment = message.attachment
+            if (message.id != messageId || attachment == null || !attachment.localPath.isNullOrBlank()) {
+                message
+            } else {
+                changed = true
+                message.copy(attachment = attachment.copy(localPath = path))
+            }
+        }
+        if (changed) messages = messages + (conversationId to updated)
+    }
+
+    private fun sha256Hex(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        val alphabet = "0123456789abcdef".toCharArray()
+        val hex = CharArray(digest.size * 2)
+        digest.forEachIndexed { index, byte ->
+            val value = byte.toInt() and 0xff
+            hex[index * 2] = alphabet[value ushr 4]
+            hex[index * 2 + 1] = alphabet[value and 0x0f]
+        }
+        return String(hex)
+    }
+
     private suspend fun plainBody(message: ApiMessage, peerId: String): String {
         val outgoing = message.senderId == userId
         val peer = if (outgoing) peerId else message.senderId
@@ -644,7 +932,7 @@ class ChatViewModel(
         if (body.isBlank()) return "End-to-end encrypted"
         val decoded = runCatching { Base64.decode(body, Base64.NO_WRAP) }.getOrNull()
         if (decoded != null && signalCiphertextType(decoded) != null) return "Encrypted message"
-        return body
+        return MediaMessages.snippet(body)
     }
 
     private fun publishKyberPreKey() {
@@ -700,6 +988,22 @@ class ChatViewModel(
     }
 }
 
+private class RevealedMessage(
+    val message: CipherMessage,
+    val envelope: MediaEnvelope? = null,
+)
+
+private sealed interface PreparedMedia {
+    class Ready(
+        val bytes: ByteArray,
+        val kind: String,
+        val mime: String,
+        val name: String,
+    ) : PreparedMedia
+
+    class Failed(val message: String) : PreparedMedia
+}
+
 class ChatViewModelFactory(
     private val sessionStore: SessionStore,
     private val appContext: Context,
@@ -730,6 +1034,8 @@ class ChatViewModelFactory(
                 ),
                 socket = ApiClient.messengerSocket(sessionStore),
                 accountData = AccountDeviceData(username, identity, preKeyStore, sessions, sent),
+                appContext = appContext.applicationContext,
+                mediaRepository = bound.mediaRepository,
             ) as T
         }
         error("Unknown ViewModel: ${modelClass.name}")

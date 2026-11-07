@@ -199,6 +199,8 @@ fun MessengerHome(
                                 viewModel.leaveConversation()
                             },
                             onSend = { body -> viewModel.sendMessage(thread.id, body) },
+                            onSendMedia = { uri, kind -> viewModel.sendMedia(thread.id, uri, kind) },
+                            onSendVoice = { file -> viewModel.sendVoiceFile(thread.id, file) },
                             onTogglePin = { viewModel.togglePin(thread.id) },
                             onNotice = ::notice,
                         )

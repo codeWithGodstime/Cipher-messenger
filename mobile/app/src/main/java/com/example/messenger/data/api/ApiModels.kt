@@ -192,3 +192,10 @@ data class WsEnvelope(
     @SerialName("request_id") val requestId: String? = null,
     val users: List<WsUserHit>? = null,
 )
+
+@Serializable
+data class AttachmentStored(
+    val id: String,
+    @SerialName("byte_size") val byteSize: Long,
+    val digest: String,
+)

@@ -6,6 +6,7 @@ import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenAuthenticator
 import com.example.messenger.data.auth.TokenRefresher
 import com.example.messenger.data.chat.ChatRepository
+import com.example.messenger.data.chat.MediaRepository
 import com.example.messenger.data.chat.MessengerSocket
 import com.example.messenger.data.keys.KeyRepository
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -21,8 +22,9 @@ object ApiClient {
     private fun newHttpBuilder(): OkHttpClient.Builder =
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
+            // A 32 MiB ciphertext upload or download needs longer than a JSON call.
+            .readTimeout(90, TimeUnit.SECONDS)
+            .writeTimeout(90, TimeUnit.SECONDS)
             .pingInterval(45, TimeUnit.SECONDS)
 
     /** No authenticator — used for login and token refresh to avoid recursion. */
@@ -72,6 +74,7 @@ object ApiClient {
             tokenRefresher = refresher,
             http = http,
             chatRepository = ChatRepository(api, json),
+            mediaRepository = MediaRepository(api, json),
             keyRepository = KeyRepository(api, json),
         )
         session = bound
@@ -94,6 +97,7 @@ object ApiClient {
         val tokenRefresher: TokenRefresher,
         val http: OkHttpClient,
         val chatRepository: ChatRepository,
+        val mediaRepository: MediaRepository,
         val keyRepository: KeyRepository,
     )
 }

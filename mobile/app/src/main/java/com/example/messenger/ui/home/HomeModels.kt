@@ -59,6 +59,16 @@ data class CipherMessage(
     val time: String,
     val dayLabel: String = "Today",
     val read: Boolean = false,
+    val attachment: ChatAttachment? = null,
+)
+
+data class ChatAttachment(
+    val kind: String,
+    val mime: String,
+    val name: String,
+    val sizeBytes: Long,
+    val attachmentId: String,
+    val localPath: String? = null,
 )
 
 data class ContactEntry(

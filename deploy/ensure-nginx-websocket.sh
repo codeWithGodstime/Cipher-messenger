@@ -74,8 +74,26 @@ cat >/etc/nginx/conf.d/messenger-upload-size.conf <<'EOF'
 client_max_body_size 32m;
 EOF
 
-install -d /var/lib/messenger/media
-chmod 700 /var/lib/messenger/media
+# The API does not run as root. A root-owned mode 700 directory makes
+# CreateTemp return "permission denied" on PUT /attachments.
+media_root=/var/lib/messenger
+media_dir=$media_root/media
+install -d "$media_dir"
+service_user="$(systemctl show -p User --value messenger-api 2>/dev/null || true)"
+if [[ -z "$service_user" ]]; then
+  pid="$(systemctl show -p MainPID --value messenger-api 2>/dev/null || true)"
+  if [[ -n "${pid:-}" && "$pid" != 0 ]]; then
+    service_user="$(ps -o user= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)"
+  fi
+fi
+if [[ -n "$service_user" ]] && id "$service_user" >/dev/null 2>&1; then
+  chown -R "$service_user": "$media_root"
+  echo "media dir owned by $service_user"
+else
+  echo "could not resolve messenger-api user; leaving $media_dir owned by $(id -un)"
+fi
+chmod 750 "$media_root"
+chmod 700 "$media_dir"
 install -d /etc/systemd/system/messenger-api.service.d
 cat >/etc/systemd/system/messenger-api.service.d/media.conf <<'EOF'
 [Service]

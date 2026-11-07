@@ -58,6 +58,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -81,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -447,7 +449,7 @@ private sealed interface ConversationRow {
     }
 
     data class Bubble(val message: CipherMessage) : ConversationRow {
-        override val key: String = message.id
+        override val key: String = message.attachment?.attachmentId?.let { "media:$it" } ?: message.id
     }
 }
 
@@ -632,39 +634,11 @@ private fun BubbleBody(
         return
     }
     if (attachment.kind == "image") {
-        Column(
-            modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.sm),
-            verticalArrangement = Arrangement.spacedBy(spacing.xs),
-        ) {
-            if (attachment.localPath.isNullOrBlank()) {
-                Text(
-                    text = "Photo",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = contentColor,
-                    modifier = Modifier.padding(horizontal = spacing.xs),
-                )
-                Text(
-                    text = "Waiting for the encrypted file…",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentColor.copy(alpha = 0.75f),
-                    modifier = Modifier.padding(horizontal = spacing.xs),
-                )
-            } else {
-                AttachmentPreview(
-                    path = attachment.localPath,
-                    contentDescription = attachment.name,
-                    color = contentColor,
-                )
-                Text(
-                    text = attachment.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = spacing.xs),
-                )
-            }
-        }
+        ImageAttachment(
+            path = attachment.localPath,
+            sending = message.sending,
+            modifier = Modifier.padding(spacing.xs),
+        )
         return
     }
     val icon = when (attachment.kind) {
@@ -697,38 +671,76 @@ private fun BubbleBody(
                 color = contentColor.copy(alpha = 0.75f),
             )
         }
+        if (message.sending || attachment.localPath.isNullOrBlank()) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                color = contentColor,
+                strokeWidth = 2.dp,
+            )
+        }
     }
 }
 
 @Composable
-private fun AttachmentPreview(
-    path: String,
-    contentDescription: String,
-    color: androidx.compose.ui.graphics.Color,
+private fun ImageAttachment(
+    path: String?,
+    sending: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var bitmap by remember(path) { mutableStateOf<ImageBitmap?>(null) }
+    var decoded by remember(path) { mutableStateOf(path.isNullOrBlank()) }
     LaunchedEffect(path) {
-        val decoded = withContext(Dispatchers.IO) { decodePreview(path, 1280) }
-        bitmap = decoded?.asImageBitmap()
+        if (path.isNullOrBlank()) {
+            bitmap = null
+            decoded = true
+            return@LaunchedEffect
+        }
+        decoded = false
+        bitmap = withContext(Dispatchers.IO) { decodePreview(path, 1280) }?.asImageBitmap()
+        decoded = true
     }
-    val image = bitmap
-    if (image != null) {
-        Image(
-            bitmap = image,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 240.dp)
-                .clip(RoundedCornerShape(12.dp)),
-        )
-    } else {
-        Text(
-            text = "Photo",
-            style = MaterialTheme.typography.bodyMedium,
-            color = color,
-            modifier = Modifier.padding(CipherTheme.spacing.xs),
-        )
+    val busy = sending || path.isNullOrBlank() || !decoded
+    Box(
+        modifier = modifier
+            .widthIn(min = 180.dp)
+            .heightIn(min = 140.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        val image = bitmap
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = "Photo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.08f)),
+            )
+        }
+        if (busy) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(36.dp),
+                    color = Color.White,
+                    strokeWidth = 3.dp,
+                )
+            }
+        }
     }
 }
 

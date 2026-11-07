@@ -59,6 +59,7 @@ data class CipherMessage(
     val time: String,
     val dayLabel: String = "Today",
     val read: Boolean = false,
+    val sending: Boolean = false,
     val attachment: ChatAttachment? = null,
 )
 

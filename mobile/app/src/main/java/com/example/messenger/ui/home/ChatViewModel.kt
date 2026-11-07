@@ -338,14 +338,12 @@ class ChatViewModel(
     }
 
     fun sendMedia(conversationId: String, uri: Uri, kind: String) {
-        notice = "Encrypting attachment…"
         viewModelScope.launch {
             deliverMedia(conversationId) { readUri(uri, kind) }
         }
     }
 
     fun sendVoiceFile(conversationId: String, file: File) {
-        notice = "Encrypting attachment…"
         viewModelScope.launch {
             deliverMedia(conversationId) { readVoice(file) }
         }
@@ -575,7 +573,11 @@ class ChatViewModel(
 
     private fun mergeHistory(live: List<CipherMessage>, history: List<CipherMessage>): List<CipherMessage> {
         val seen = history.map { it.id }.toSet()
-        return history + live.filter { it.id !in seen }
+        val sentAttachments = history.mapNotNull { it.attachment?.attachmentId }.toSet()
+        return history + live.filter { message ->
+            message.id !in seen &&
+                !(message.sending && message.attachment?.attachmentId in sentAttachments)
+        }
     }
 
     private suspend fun onIncomingMessage(message: ApiMessage) {
@@ -599,8 +601,14 @@ class ChatViewModel(
             return
         }
         val revealed = revealMessage(message, peerId)
-        val cipher = revealed.message
-        messages = messages + (message.conversationId to (current + cipher))
+        val cipher = withPendingPath(revealed.message, current)
+        val pendingId = pendingIdFor(current, revealed.envelope?.attachmentId)
+        val next = if (pendingId == null) {
+            current + cipher
+        } else {
+            current.map { if (it.id == pendingId) cipher else it }
+        }
+        messages = messages + (message.conversationId to next)
         scheduleMedia(message.conversationId, listOf(revealed))
         val viewing = activeConversationId == message.conversationId
         updateThreadFromMessage(message, cipher.body, bumpUnread = !viewing && !cipher.outgoing)
@@ -683,13 +691,7 @@ class ChatViewModel(
             is PreparedMedia.Ready -> prepared
         }
         val attachmentId = UUID.randomUUID().toString()
-        val sealed = try {
-            withContext(Dispatchers.IO) { MediaCipher.seal(ready.bytes, attachmentId) }
-        } catch (error: Exception) {
-            notice = "Couldn't encrypt this attachment."
-            return
-        }
-        try {
+        val cached = try {
             withContext(Dispatchers.IO) {
                 mediaCache.write(attachmentId, ready.name, ready.bytes)
             }
@@ -697,14 +699,25 @@ class ChatViewModel(
             notice = "Couldn't save this attachment on this device."
             return
         }
+        val localId = "local-$attachmentId"
+        showPending(conversationId, pendingMedia(localId, attachmentId, ready, cached.absolutePath))
+        val sealed = try {
+            withContext(Dispatchers.IO) { MediaCipher.seal(ready.bytes, attachmentId) }
+        } catch (error: Exception) {
+            dropPending(conversationId, localId)
+            notice = "Couldn't encrypt this attachment."
+            return
+        }
         val stored = when (val uploaded = mediaRepository.upload(token, conversationId, attachmentId, sealed.ciphertext)) {
             is ChatCall.Failed -> {
+                dropPending(conversationId, localId)
                 notice = uploaded.message
                 return
             }
             is ChatCall.Ok -> uploaded.value
         }
         if (!stored.digest.equals(sealed.digestHex, ignoreCase = true)) {
+            dropPending(conversationId, localId)
             notice = "The server stored different bytes than this device encrypted."
             return
         }
@@ -721,21 +734,88 @@ class ChatViewModel(
         val signalBody = when (val encrypted = crypto.encrypt(userId, token, peerId, envelope)) {
             is CryptoCall.Ok -> encrypted.body
             is CryptoCall.Failed -> {
+                dropPending(conversationId, localId)
                 notice = encrypted.message
                 return
             }
         }
         if (socket.sendMessage(conversationId, signalBody)) {
-            notice = null
             return
         }
         when (val result = repository.sendMessage(token, conversationId, signalBody)) {
-            is ChatCall.Ok -> {
-                notice = null
-                onIncomingMessage(result.value)
+            is ChatCall.Ok -> onIncomingMessage(result.value)
+            is ChatCall.Failed -> {
+                dropPending(conversationId, localId)
+                notice = result.message
             }
-            is ChatCall.Failed -> notice = result.message
         }
+    }
+
+    private fun pendingMedia(
+        localId: String,
+        attachmentId: String,
+        ready: PreparedMedia.Ready,
+        path: String,
+    ): CipherMessage {
+        val label = when (ready.kind) {
+            "image" -> "Photo"
+            "video" -> "Video"
+            "audio" -> "Audio"
+            else -> ready.name.trim().ifBlank { "Document" }
+        }
+        return CipherMessage(
+            id = localId,
+            outgoing = true,
+            body = label,
+            time = clockLabel(),
+            dayLabel = "Today",
+            sending = true,
+            attachment = ChatAttachment(
+                kind = ready.kind,
+                mime = ready.mime,
+                name = ready.name,
+                sizeBytes = ready.bytes.size.toLong(),
+                attachmentId = attachmentId,
+                localPath = path,
+            ),
+        )
+    }
+
+    private fun showPending(conversationId: String, pending: CipherMessage) {
+        val current = messages[conversationId].orEmpty()
+        messages = messages + (conversationId to (current + pending))
+        threads = threads.map { thread ->
+            if (thread.id != conversationId) {
+                thread
+            } else {
+                thread.copy(snippet = pending.body, timeLabel = pending.time, inRecent = true)
+            }
+        }
+    }
+
+    private fun dropPending(conversationId: String, localId: String) {
+        val current = messages[conversationId].orEmpty()
+        val remaining = current.filterNot { it.id == localId }
+        if (remaining.size == current.size) return
+        messages = messages + (conversationId to remaining)
+        val last = remaining.lastOrNull() ?: return
+        threads = threads.map { thread ->
+            if (thread.id != conversationId) thread else thread.copy(snippet = last.body, timeLabel = last.time)
+        }
+    }
+
+    private fun pendingIdFor(current: List<CipherMessage>, attachmentId: String?): String? {
+        if (attachmentId.isNullOrBlank()) return null
+        return current.firstOrNull { it.sending && it.attachment?.attachmentId == attachmentId }?.id
+    }
+
+    private fun withPendingPath(message: CipherMessage, current: List<CipherMessage>): CipherMessage {
+        val attachment = message.attachment ?: return message
+        if (!attachment.localPath.isNullOrBlank()) return message
+        val path = current.firstOrNull {
+            it.sending && it.attachment?.attachmentId == attachment.attachmentId
+        }?.attachment?.localPath ?: return message
+        return message.copy(attachment = attachment.copy(localPath = path))
     }
 
     private suspend fun readUri(uri: Uri, kind: String): PreparedMedia = withContext(Dispatchers.IO) {

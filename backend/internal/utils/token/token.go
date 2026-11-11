@@ -54,7 +54,7 @@ func (m *Manager) Parse(raw string) (string, string, error) {
 			return nil, ErrInvalid
 		}
 		return m.secret, nil
-	})
+	}, jwt.WithLeeway(30*time.Second))
 	if err != nil || !parsed.Valid || c.Subject == "" || c.SessionID == "" || c.Issuer != issuer {
 		return "", "", ErrInvalid
 	}

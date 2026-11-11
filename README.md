@@ -8,7 +8,7 @@ UI reference: [Cipher Android App Prototype](https://stitch.withgoogle.com/proje
 
 - Backend: https://messenger.publicvm.com/
 - Download the app: https://example.com/cipher.apk
-- Demo: https://example.com/cipher.apk
+- Demo: [Demo Link](https://drive.google.com/file/d/15Bbt5vpRkPJt3CNUvBpHulO2d8PB1X4d/view?usp=sharing)
 - What I learnt: https://example.com/blog/cipher
 
 ## Scope

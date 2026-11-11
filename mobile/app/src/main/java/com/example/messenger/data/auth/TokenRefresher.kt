@@ -4,6 +4,7 @@ import com.example.messenger.data.api.MessengerApi
 import com.example.messenger.data.api.RefreshRequest
 import com.example.messenger.data.api.TokenPair
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.IOException
@@ -48,11 +50,23 @@ class TokenRefresher(
         return refreshLocked()
     }
 
-    /** Forces a refresh (used after HTTP 401). */
-    suspend fun refreshNow(): String? = mutex.withLock { refreshLocked() }
+    /**
+     * After HTTP 401: reuse a token another call already stored, otherwise refresh.
+     */
+    suspend fun refreshAfterUnauthorized(failedAccessToken: String?): String? = mutex.withLock {
+        val current = sessionStore.accessToken
+        if (!current.isNullOrBlank() &&
+            current != failedAccessToken &&
+            !sessionStore.isAccessExpiringSoon()
+        ) {
+            return current
+        }
+        return refreshLocked()
+    }
 
     /** Blocking wrapper for OkHttp's Authenticator thread. */
-    fun refreshBlocking(): String? = runBlocking { refreshNow() }
+    fun refreshBlocking(failedAccessToken: String? = null): String? =
+        runBlocking(Dispatchers.IO) { refreshAfterUnauthorized(failedAccessToken) }
 
     fun start(scope: CoroutineScope) {
         if (loopJob?.isActive == true) return
@@ -85,7 +99,6 @@ class TokenRefresher(
 
     /** Clears tokens and notifies the UI to return to auth. */
     fun signOut() {
-        stop()
         sessionStore.clear()
         emitSessionLost()
     }
@@ -106,6 +119,9 @@ class TokenRefresher(
         }
         return when (val result = callRefresh(refresh)) {
             is RefreshCall.Ok -> {
+                if (sessionStore.refreshToken != refresh) {
+                    return sessionStore.accessToken
+                }
                 sessionStore.rememberTokens(result.pair)
                 result.pair.accessToken
             }
@@ -119,8 +135,8 @@ class TokenRefresher(
         }
     }
 
-    private suspend fun callRefresh(refreshToken: String): RefreshCall {
-        return try {
+    private suspend fun callRefresh(refreshToken: String): RefreshCall = withContext(Dispatchers.IO) {
+        try {
             val response = api.refresh(RefreshRequest(refreshToken))
             if (!response.isSuccessful) {
                 val unauthorized = response.code() == 401

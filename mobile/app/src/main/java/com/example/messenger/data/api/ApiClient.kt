@@ -1,6 +1,7 @@
 package com.example.messenger.data.api
 
 import com.example.messenger.BuildConfig
+import com.example.messenger.data.auth.AccessTokenInterceptor
 import com.example.messenger.data.auth.AuthRepository
 import com.example.messenger.data.auth.SessionStore
 import com.example.messenger.data.auth.TokenAuthenticator
@@ -66,6 +67,7 @@ object ApiClient {
         }
         val refresher = TokenRefresher(sessionStore, plainApi, json)
         val http = newHttpBuilder()
+            .addInterceptor(AccessTokenInterceptor(sessionStore))
             .authenticator(TokenAuthenticator(refresher))
             .build()
         val api = retrofit(http)

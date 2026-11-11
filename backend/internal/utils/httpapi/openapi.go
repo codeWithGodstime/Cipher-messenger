@@ -115,7 +115,7 @@ func openAPI() (*openapi31.Spec, error) {
 		{
 			method: http.MethodPost, path: "/auth/refresh", id: "refreshSession",
 			summary:     "Refresh a session",
-			description: "Rotates the refresh token and returns a new access token for the same session.",
+			description: "Returns a new access token for the same session. The refresh token is reused and the session expiry slides forward.",
 			request:     new(RefreshRequest),
 			bodyOnly:    true,
 			responses: []response{

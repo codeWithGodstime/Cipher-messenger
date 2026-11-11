@@ -68,7 +68,7 @@ paths:
       - Messenger
   /auth/refresh:
     post:
-      description: Rotates the refresh token and returns a new access token for the same session.
+      description: Returns a new access token for the same session. The refresh token is reused and the session expiry slides forward.
       operationId: refreshSession
       requestBody:
         content:

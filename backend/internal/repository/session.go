@@ -15,7 +15,7 @@ type SessionRepository interface {
 	Create(ctx context.Context, session *model.Session) error
 	FindByID(ctx context.Context, id string) (*model.Session, error)
 	FindByRefreshHash(ctx context.Context, hash string) (*model.Session, error)
-	UpdateRefresh(ctx context.Context, id, hash string, expiresAt time.Time) error
+	ExtendExpiry(ctx context.Context, id string, expiresAt time.Time) error
 	Revoke(ctx context.Context, id string, now time.Time) error
 }
 
@@ -59,13 +59,10 @@ func (r *sessionRepository) FindByRefreshHash(ctx context.Context, hash string) 
 	return &session, nil
 }
 
-func (r *sessionRepository) UpdateRefresh(ctx context.Context, id, hash string, expiresAt time.Time) error {
+func (r *sessionRepository) ExtendExpiry(ctx context.Context, id string, expiresAt time.Time) error {
 	res := r.conn(ctx).Model(&model.Session{}).
 		Where("id = ? AND revoked_at IS NULL", id).
-		Updates(map[string]any{
-			"refresh_hash": hash,
-			"expires_at":   expiresAt,
-		})
+		Update("expires_at", expiresAt)
 	if res.Error != nil {
 		return res.Error
 	}

@@ -173,7 +173,9 @@ type TokenResult struct {
 	ExpiresIn    int
 }
 
-// Refresh rotates the refresh token and returns a new access token for the same session.
+// Refresh issues a new access token for the same session.
+// The refresh token is reused so a dropped response cannot lock the user out.
+// Session expiry slides forward on each successful refresh.
 func (s *AuthService) Refresh(ctx context.Context, raw string) (*TokenResult, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -188,15 +190,11 @@ func (s *AuthService) Refresh(ctx context.Context, raw string) (*TokenResult, er
 		return nil, apperr.InvalidRefresh()
 	}
 
-	refreshRaw, refreshHash, err := token.NewRefresh()
-	if err != nil {
-		return nil, err
-	}
-	if err := s.sessions.UpdateRefresh(ctx, session.ID, refreshHash, now.Add(s.cfg.RefreshTTL)); err != nil {
+	if err := s.sessions.ExtendExpiry(ctx, session.ID, now.Add(s.cfg.RefreshTTL)); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, apperr.InvalidRefresh()
 		}
-		return nil, fmt.Errorf("rotate refresh token: %w", err)
+		return nil, fmt.Errorf("extend session: %w", err)
 	}
 	access, err := s.tokens.Sign(session.UserID, session.ID, now)
 	if err != nil {
@@ -204,7 +202,7 @@ func (s *AuthService) Refresh(ctx context.Context, raw string) (*TokenResult, er
 	}
 	return &TokenResult{
 		AccessToken:  access,
-		RefreshToken: refreshRaw,
+		RefreshToken: raw,
 		ExpiresIn:    int(s.cfg.AccessTTL.Seconds()),
 	}, nil
 }

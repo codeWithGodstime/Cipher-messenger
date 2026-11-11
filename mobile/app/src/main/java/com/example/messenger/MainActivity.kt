@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(tokenRefresher) {
+                    tokenRefresher.start(this)
                     tokenRefresher.sessionLost.collect { leaveSession() }
                 }
 

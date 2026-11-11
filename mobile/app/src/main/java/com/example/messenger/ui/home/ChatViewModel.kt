@@ -142,7 +142,6 @@ class ChatViewModel(
         }
 
     init {
-        tokens.start(viewModelScope)
         socket.start(viewModelScope)
         viewModelScope.launch {
             socket.opened.collect {
@@ -188,7 +187,6 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
-        tokens.stop()
         socket.stop()
         super.onCleared()
     }
